@@ -16,6 +16,7 @@ import {
 } from 'firebase/auth';
 import './App.css';
 
+
 const TAMANHOS_PADRAO = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44'];
 
 function App() {
@@ -198,9 +199,9 @@ function App() {
         <div className="card-form login-card">
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
             <img
-              src="/sneaker.svg"
-              alt="Ícone de Tênis"
-              style={{ width: '54px', height: '54px', objectFit: 'contain', filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35))' }}
+              src="/sneaker.png"
+              alt="Tênis"
+              style={{ width: '56px', height: '56px', objectFit: 'contain', filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35))' }}
             />
           </div>
           <h2 className="title" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>Catálogo</h2>
@@ -258,9 +259,9 @@ function App() {
         </div>
         <h1 className="title" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           <img
-            src="/sneaker.svg"
-            alt="Ícone de Tênis"
-            style={{ width: '40px', height: '40px', objectFit: 'contain' }}
+            src="/sneaker.png"
+            alt="Tênis"
+            style={{ width: '42px', height: '42px', objectFit: 'contain' }}
           />
           Catálogo de Produtos
         </h1>
