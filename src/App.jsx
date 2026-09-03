@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import {
   collection,
   addDoc,
@@ -8,6 +8,12 @@ import {
   doc,
   updateDoc,
 } from "firebase/firestore";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut,
+} from "firebase/auth";
 import "./App.css";
 
 const TAMANHOS_PADRAO = [
@@ -24,19 +30,35 @@ const TAMANHOS_PADRAO = [
 ];
 
 function App() {
+  // Estados de Autenticação
+  const [usuario, setUsuario] = useState(null);
+  const [carregandoAuth, setCarregandoAuth] = useState(true);
+  const [emailAuth, setEmailAuth] = useState("");
+  const [senhaAuth, setSenhaAuth] = useState("");
+  const [isCriandoConta, setIsCriandoConta] = useState(false);
+  const [erroAuth, setErroAuth] = useState("");
+
+  // Estados da Aplicação
   const [nome, setNome] = useState("");
   const [precoDisplay, setPrecoDisplay] = useState("");
   const [tamanhos, setTamanhos] = useState({});
   const [imagemUrl, setImagemUrl] = useState("");
   const [produtos, setProdutos] = useState([]);
   const [idEditando, setIdEditando] = useState(null);
-
-  // Estados para Busca, Filtro e Ordenação
   const [busca, setBusca] = useState("");
   const [filtroTamanho, setFiltroTamanho] = useState("");
   const [ordenacao, setOrdenacao] = useState("recentes");
 
   const produtosCollectionRef = collection(db, "produtos");
+
+  // Monitora o estado de login do usuário no Firebase
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUsuario(user);
+      setCarregandoAuth(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const estoqueTotal = Object.values(tamanhos).reduce(
     (acc, qtd) => acc + (Number(qtd) || 0),
@@ -60,20 +82,15 @@ function App() {
     return parseFloat(apenasNumeros) / 100;
   };
 
-  const handlePrecoChange = (e) => {
-    const valorDigitado = e.target.value;
-    setPrecoDisplay(formatarMoeda(valorDigitado));
-  };
+  const handlePrecoChange = (e) =>
+    setPrecoDisplay(formatarMoeda(e.target.value));
 
   const handleTamanhoChange = (tamanho, quantidade) => {
     const qtdNum = Math.max(0, parseInt(quantidade, 10) || 0);
     setTamanhos((prev) => {
       const novos = { ...prev };
-      if (qtdNum > 0) {
-        novos[tamanho] = qtdNum;
-      } else {
-        delete novos[tamanho];
-      }
+      if (qtdNum > 0) novos[tamanho] = qtdNum;
+      else delete novos[tamanho];
       return novos;
     });
   };
@@ -82,13 +99,42 @@ function App() {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagemUrl(reader.result);
-      };
+      reader.onloadend = () => setImagemUrl(reader.result);
       reader.readAsDataURL(file);
     }
   };
 
+  // Funções de Autenticação
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setErroAuth("");
+    try {
+      if (isCriandoConta) {
+        await createUserWithEmailAndPassword(auth, emailAuth, senhaAuth);
+      } else {
+        await signInWithEmailAndPassword(auth, emailAuth, senhaAuth);
+      }
+      setEmailAuth("");
+      setSenhaAuth("");
+    } catch (error) {
+      if (
+        error.code === "auth/invalid-credential" ||
+        error.code === "auth/wrong-password"
+      ) {
+        setErroAuth("E-mail ou senha incorretos.");
+      } else if (error.code === "auth/email-already-in-use") {
+        setErroAuth("Este e-mail já está cadastrado.");
+      } else if (error.code === "auth/weak-password") {
+        setErroAuth("A senha deve ter pelo menos 6 caracteres.");
+      } else {
+        setErroAuth("Erro na autenticação. Verifique os dados.");
+      }
+    }
+  };
+
+  const handleLogout = () => signOut(auth);
+
+  // CRUD do Catálogo
   const carregarProdutos = async () => {
     try {
       const data = await getDocs(produtosCollectionRef);
@@ -99,8 +145,8 @@ function App() {
   };
 
   useEffect(() => {
-    carregarProdutos();
-  }, []);
+    if (usuario) carregarProdutos();
+  }, [usuario]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -147,8 +193,7 @@ function App() {
 
   const deletarProduto = async (id) => {
     try {
-      const produtoDoc = doc(db, "produtos", id);
-      await deleteDoc(produtoDoc);
+      await deleteDoc(doc(db, "produtos", id));
       carregarProdutos();
     } catch (error) {
       console.error("Erro ao excluir:", error);
@@ -158,8 +203,7 @@ function App() {
   const iniciarEdicao = (produto) => {
     setIdEditando(produto.id);
     setNome(produto.nome);
-    const precoCentavos = Math.round(produto.preco * 100).toString();
-    setPrecoDisplay(formatarMoeda(precoCentavos));
+    setPrecoDisplay(formatarMoeda(Math.round(produto.preco * 100).toString()));
     setTamanhos(produto.tamanhos || {});
     setImagemUrl(produto.imagemUrl || "");
   };
@@ -172,7 +216,6 @@ function App() {
     setImagemUrl("");
   };
 
-  // Aplicação dos Filtros (Busca + Tamanho + Ordenação)
   const produtosFiltrados = produtos
     .filter((prod) => {
       const atendeBusca = prod.nome.toLowerCase().includes(busca.toLowerCase());
@@ -186,12 +229,95 @@ function App() {
       if (ordenacao === "maior-preco") return b.preco - a.preco;
       if (ordenacao === "maior-estoque")
         return (b.estoque || 0) - (a.estoque || 0);
-      return 0; // Padrão: Ordem do Firebase
+      return 0;
     });
 
+  // Tela de Carregamento Inicial
+  if (carregandoAuth) {
+    return <div className="loading-container">Carregando sistema...</div>;
+  }
+
+  // Tela de Login / Cadastro
+  if (!usuario) {
+    return (
+      <div className="login-container">
+        <div className="card-form login-card">
+          <h2
+            className="title"
+            style={{ fontSize: "1.8rem", marginBottom: "8px" }}
+          >
+            🛍️ Catálogo
+          </h2>
+          <p className="subtitle" style={{ marginBottom: "24px" }}>
+            {isCriandoConta
+              ? "Crie sua conta para acessar"
+              : "Faça login para acessar o sistema"}
+          </p>
+
+          {erroAuth && <div className="error-badge">{erroAuth}</div>}
+
+          <form onSubmit={handleAuthSubmit} className="form">
+            <div className="input-group">
+              <label className="label">E-mail</label>
+              <input
+                type="email"
+                placeholder="seu@email.com"
+                value={emailAuth}
+                onChange={(e) => setEmailAuth(e.target.value)}
+                className="input"
+                required
+              />
+            </div>
+
+            <div className="input-group">
+              <label className="label">Senha</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={senhaAuth}
+                onChange={(e) => setSenhaAuth(e.target.value)}
+                className="input"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn-primary"
+              style={{ marginTop: "12px" }}
+            >
+              {isCriandoConta ? "Cadastrar Conta" : "Entrar no Sistema"}
+            </button>
+          </form>
+
+          <p
+            className="toggle-auth"
+            onClick={() => {
+              setIsCriandoConta(!isCriandoConta);
+              setErroAuth("");
+            }}
+          >
+            {isCriandoConta
+              ? "Já tem uma conta? Faça Login"
+              : "Não tem conta? Cadastre-se"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Interface Principal
   return (
     <div className="container">
       <header className="header">
+        <div className="user-bar">
+          <span>
+            Conectado como: <strong>{usuario.email}</strong>
+          </span>
+          <button onClick={handleLogout} className="btn-logout">
+            Sair 🚪
+          </button>
+        </div>
         <h1 className="title">🛍️ Catálogo de Produtos</h1>
         <p className="subtitle">
           Gerencie e visualize seu inventário em tempo real
@@ -199,7 +325,7 @@ function App() {
       </header>
 
       <div className="main-content">
-        {/* Formulário na Coluna Esquerda */}
+        {/* Formulário Lateral */}
         <aside className="sidebar">
           <section className="card-form">
             <h2 className="card-title">
@@ -218,36 +344,29 @@ function App() {
                 />
               </div>
 
+              {/* Upload de Imagem Customizado */}
               <div className="input-group">
                 <label className="label">
                   Imagem do Produto (Arquivo Local)
                 </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="input"
-                />
+                <label className="file-input-wrapper">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="file-input-hidden"
+                  />
+                  <span className="file-input-button">
+                    📁 Selecionar Imagem
+                  </span>
+                </label>
                 {imagemUrl && (
-                  <div style={{ marginTop: "10px", textAlign: "center" }}>
-                    <p
-                      style={{
-                        fontSize: "0.8rem",
-                        color: "#94a3b8",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      Pré-visualização:
-                    </p>
+                  <div className="preview-container">
+                    <p className="preview-label">Pré-visualização:</p>
                     <img
                       src={imagemUrl}
                       alt="Pré-visualização"
-                      style={{
-                        maxWidth: "100px",
-                        maxHeight: "100px",
-                        borderRadius: "6px",
-                        objectFit: "cover",
-                      }}
+                      className="preview-image"
                     />
                   </div>
                 )}
@@ -265,7 +384,6 @@ function App() {
                     required
                   />
                 </div>
-
                 <div className="input-group flex-1">
                   <label className="label">Estoque Total</label>
                   <input
@@ -316,9 +434,8 @@ function App() {
           </section>
         </aside>
 
-        {/* Área Principal de Filtros e Exibição de Produtos */}
+        {/* Área Principal de Produtos */}
         <main className="content-area">
-          {/* Barra de Busca e Ordenação */}
           <div className="filter-bar">
             <div className="search-container flex-1">
               <input
@@ -329,7 +446,6 @@ function App() {
                 className="search-input"
               />
             </div>
-
             <div className="sort-container">
               <select
                 value={ordenacao}
@@ -344,7 +460,6 @@ function App() {
             </div>
           </div>
 
-          {/* Filtro Rápido por Tamanhos */}
           <div className="filter-tamanhos-container">
             <span className="filter-tamanhos-label">Filtrar por Tamanho:</span>
             <div className="filter-tamanhos-buttons">
@@ -384,7 +499,6 @@ function App() {
                     Estoque Total:{" "}
                     {prod.estoque !== undefined ? prod.estoque : 0}
                   </div>
-
                   <div className="product-image-container">
                     {prod.imagemUrl ? (
                       <img
@@ -396,7 +510,6 @@ function App() {
                       <div className="no-image-placeholder">📦 Sem Imagem</div>
                     )}
                   </div>
-
                   <h4 className="product-name">{prod.nome}</h4>
                   <div className="product-price">
                     R${" "}
@@ -404,7 +517,6 @@ function App() {
                       minimumFractionDigits: 2,
                     })}
                   </div>
-
                   <div className="tamanhos-card-container">
                     <span className="tamanhos-card-title">Tamanhos:</span>
                     <div className="tamanhos-badges">
@@ -425,7 +537,6 @@ function App() {
                       )}
                     </div>
                   </div>
-
                   <div className="card-actions">
                     <button
                       onClick={() => iniciarEdicao(prod)}
