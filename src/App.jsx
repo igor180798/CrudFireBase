@@ -196,7 +196,14 @@ function App() {
     return (
       <div className="login-container">
         <div className="card-form login-card">
-          <h2 className="title" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>🛍️ Catálogo</h2>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+            <img
+              src="/sneaker.svg"
+              alt="Ícone de Tênis"
+              style={{ width: '54px', height: '54px', objectFit: 'contain', filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35))' }}
+            />
+          </div>
+          <h2 className="title" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>Catálogo</h2>
           <p className="subtitle" style={{ marginBottom: '24px' }}>
             {isCriandoConta ? 'Crie sua conta para acessar' : 'Faça login para acessar o sistema'}
           </p>
@@ -249,7 +256,14 @@ function App() {
           <span>Conectado como: <strong>{usuario.email}</strong></span>
           <button onClick={handleLogout} className="btn-logout">Sair 🚪</button>
         </div>
-        <h1 className="title">🛍️ Catálogo de Produtos</h1>
+        <h1 className="title" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+          <img
+            src="/sneaker.svg"
+            alt="Ícone de Tênis"
+            style={{ width: '40px', height: '40px', objectFit: 'contain' }}
+          />
+          Catálogo de Produtos
+        </h1>
         <p className="subtitle">Gerencie e visualize seu inventário em tempo real</p>
       </header>
 

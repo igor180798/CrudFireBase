@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="soleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#cbd5e1"/>
+    </linearGradient>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="60%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#e11d48"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sola do Tênis -->
+  <path d="M4 44 C8 44 14 43 22 43 C32 43 42 45 56 45 C60 45 61 48 59 52 C57 54 53 55 48 55 C34 55 18 55 8 54 C5 53 3 48 4 44 Z" fill="url(#soleGrad)"/>
+  <path d="M5 50 C18 51 34 51 48 51 C54 51 58 50 59 48 C58 52 54 55 48 55 C34 55 18 55 8 54 C6 53 5 51 5 50 Z" fill="#94a3b8" opacity="0.4"/>
+
+  <!-- Corpo Principal do Tênis -->
+  <path d="M7 44 C8 37 13 32 19 32 C23 32 26 35 29 27 C31 22 36 17 43 17 C45 17 48 19 47 23 C45 28 44 33 46 36 C49 39 56 42 57 44 C53 45 42 43 22 43 C14 43 8 44 7 44 Z" fill="url(#bodyGrad)"/>
+
+  <!-- Faixa de Destaque / Swoosh Wave -->
+  <path d="M12 42 C18 36 28 35 38 30 C45 26 47 28 43 33 C34 38 24 40 12 42 Z" fill="url(#accentGrad)"/>
+
+  <!-- Detalhe superior / Cano do Tênis -->
+  <path d="M37 21 C39 18 42 17 45 17 C46 17 47 18 46 21 C42 22 39 22 37 21 Z" fill="#0f172a" opacity="0.4"/>
+
+  <!-- Cadarços -->
+  <g stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.9">
+    <line x1="28" y1="27" x2="33" y2="29" />
+    <line x1="26" y1="31" x2="31" y2="33" />
+    <line x1="24" y1="35" x2="29" y2="37" />
+  </g>
+
+  <!-- Pesponto / Linha decorativa -->
+  <path d="M10 43 C15 37 20 35 25 35" fill="none" stroke="#ffffff" stroke-width="1" stroke-dasharray="1.5 1.5" opacity="0.6"/>
+</svg>
