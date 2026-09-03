@@ -3,16 +3,15 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC5k5QO0u__sk6ch8rgFhEmSe_9U91nEhg",
-  authDomain: "cadastro-produtos-5304d.firebaseapp.com",
-  projectId: "cadastro-produtos-5304d",
-  storageBucket: "cadastro-produtos-5304d.firebasestorage.app",
-  messagingSenderId: "500175555095",
-  appId: "1:500175555095:web:086c8ea6555a3700f72a52",
-  measurementId: "G-NM9KK84YCF",
+  apiKey: "AIzaSyD0EasgIoiKJW59jcxPi1z1I3RIZTR8X58",
+  authDomain: "igor-1fb49.firebaseapp.com",
+  projectId: "igor-1fb49",
+  storageBucket: "igor-1fb49.firebasestorage.app",
+  messagingSenderId: "1000432557017",
+  appId: "1:1000432557017:web:6885069620f9f3c41297c8"
 };
 
 const app = initializeApp(firebaseConfig);
 
-export const db = getFirestore(app);
+export const db = getFirestore(app, "igor");
 export const auth = getAuth(app);
