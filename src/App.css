@@ -301,15 +301,20 @@ body {
   align-items: start;
 }
 
-@media (max-width: 900px) {
-  .main-content {
-    grid-template-columns: 1fr;
-  }
-}
-
 .sidebar {
   position: sticky;
   top: 20px;
+}
+
+@media (max-width: 900px) {
+  .main-content {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .sidebar {
+    position: static;
+  }
 }
 
 /* Filtros */
@@ -599,4 +604,15 @@ body {
   color: #38bdf8;
   font-size: 1.2rem;
   font-weight: 600;
+}
+
+.sidebar-cadastro {
+  position: static;
+}
+
+@media (min-width: 768px) {
+  .sidebar-cadastro {
+    position: sticky;
+    top: 1rem;
+  }
 }
