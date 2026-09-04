@@ -6,7 +6,9 @@ import {
   getDocs,
   deleteDoc,
   doc,
-  updateDoc
+  updateDoc,
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import {
   signInWithEmailAndPassword,
@@ -28,6 +30,18 @@ function App() {
   const [isCriandoConta, setIsCriandoConta] = useState(false);
   const [erroAuth, setErroAuth] = useState('');
 
+  // Estados de Cadastro
+  const [nomeCompleto, setNomeCompleto] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [cep, setCep] = useState('');
+  const [rua, setRua] = useState('');
+  const [bairro, setBairro] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [estado, setEstado] = useState('');
+  const [perfilIncompleto, setPerfilIncompleto] = useState(false);
+  const [showPerfilModal, setShowPerfilModal] = useState(false);
+
   // Estados da Aplicação
   const [nome, setNome] = useState('');
   const [precoDisplay, setPrecoDisplay] = useState('');
@@ -41,10 +55,41 @@ function App() {
 
   const produtosCollectionRef = collection(db, 'produtos');
 
+  const verificarPerfil = async (uid) => {
+    try {
+      const docRef = doc(db, 'usuarios', uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setNomeCompleto(data.nomeCompleto || '');
+        setDataNascimento(data.dataNascimento || '');
+        setCpf(data.cpf || '');
+        setCep(data.cep || '');
+        setRua(data.rua || '');
+        setBairro(data.bairro || '');
+        setCidade(data.cidade || '');
+        setEstado(data.estado || '');
+
+        if (!data.cpf || !data.cep || !data.nomeCompleto) {
+          setPerfilIncompleto(true);
+        } else {
+          setPerfilIncompleto(false);
+        }
+      } else {
+        setPerfilIncompleto(true);
+      }
+    } catch (error) {
+      console.error("Erro ao verificar perfil", error);
+    }
+  };
+
   // Monitora o estado de login do usuário no Firebase
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUsuario(user);
+      if (user) {
+        await verificarPerfil(user.uid);
+      }
       setCarregandoAuth(false);
     });
     return () => unsubscribe();
@@ -87,13 +132,71 @@ function App() {
     }
   };
 
+  const handleCpfChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 11) value = value.slice(0, 11);
+    value = value.replace(/(\d{3})(\d)/, '$1.$2');
+    value = value.replace(/(\d{3})(\d)/, '$1.$2');
+    value = value.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    setCpf(value);
+  };
+
+  const handleCepChange = async (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 8) value = value.slice(0, 8);
+    value = value.replace(/(\d{5})(\d)/, '$1-$2');
+    setCep(value);
+
+    if (value.replace(/\D/g, '').length === 8) {
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${value.replace(/\D/g, '')}/json/`);
+        const data = await res.json();
+        if (!data.erro) {
+          setRua(data.logradouro || '');
+          setBairro(data.bairro || '');
+          setCidade(data.localidade || '');
+          setEstado(data.uf || '');
+        }
+      } catch (error) {
+        console.error("Erro ao buscar CEP:", error);
+      }
+    }
+  };
+
   // Funções de Autenticação
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setErroAuth('');
     try {
       if (isCriandoConta) {
-        await createUserWithEmailAndPassword(auth, emailAuth, senhaAuth);
+        if (!nomeCompleto || !dataNascimento || !cpf || !cep || !rua || !bairro || !cidade || !estado) {
+          setErroAuth('Por favor, preencha todos os campos do cadastro.');
+          return;
+        }
+
+        const userCredential = await createUserWithEmailAndPassword(auth, emailAuth, senhaAuth);
+        
+        await setDoc(doc(db, 'usuarios', userCredential.user.uid), {
+          nomeCompleto,
+          dataNascimento,
+          cpf,
+          cep,
+          rua,
+          bairro,
+          cidade,
+          estado,
+          email: emailAuth,
+          criadoEm: new Date()
+        });
+
+        setNomeCompleto('');
+        setDataNascimento('');
+        setCpf('');
+        setCep('');
+        setRua('');
+        setBairro('');
+        setCidade('');
+        setEstado('');
       } else {
         await signInWithEmailAndPassword(auth, emailAuth, senhaAuth);
       }
@@ -113,6 +216,33 @@ function App() {
   };
 
   const handleLogout = () => signOut(auth);
+
+  const handleSavePerfil = async (e) => {
+    e.preventDefault();
+    if (!nomeCompleto || !dataNascimento || !cpf || !cep || !rua || !bairro || !cidade || !estado) {
+      alert("Por favor, preencha todos os campos do perfil.");
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'usuarios', usuario.uid), {
+        nomeCompleto,
+        dataNascimento,
+        cpf,
+        cep,
+        rua,
+        bairro,
+        cidade,
+        estado,
+        email: usuario.email,
+        atualizadoEm: new Date()
+      }, { merge: true });
+      setPerfilIncompleto(false);
+      setShowPerfilModal(false);
+    } catch (error) {
+      console.error("Erro ao salvar perfil", error);
+      alert("Erro ao salvar perfil.");
+    }
+  };
 
   // CRUD do Catálogo
   const carregarProdutos = async () => {
@@ -236,6 +366,49 @@ function App() {
               />
             </div>
 
+            {isCriandoConta && (
+              <>
+                <div className="input-group">
+                  <label className="label">Nome Completo</label>
+                  <input type="text" placeholder="João da Silva" value={nomeCompleto} onChange={(e) => setNomeCompleto(e.target.value)} className="input" required />
+                </div>
+                <div className="form-row">
+                  <div className="input-group flex-1">
+                    <label className="label">Data de Nascimento</label>
+                    <input type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} className="input" required />
+                  </div>
+                  <div className="input-group flex-1">
+                    <label className="label">CPF</label>
+                    <input type="text" placeholder="000.000.000-00" value={cpf} onChange={handleCpfChange} className="input" required />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="input-group flex-1">
+                    <label className="label">CEP</label>
+                    <input type="text" placeholder="00000-000" value={cep} onChange={handleCepChange} className="input" required />
+                  </div>
+                  <div className="input-group" style={{ flex: 2 }}>
+                    <label className="label">Estado</label>
+                    <input type="text" placeholder="UF" value={estado} onChange={(e) => setEstado(e.target.value)} className="input" required />
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="label">Rua</label>
+                  <input type="text" placeholder="Sua rua" value={rua} onChange={(e) => setRua(e.target.value)} className="input" required />
+                </div>
+                <div className="form-row">
+                  <div className="input-group flex-1">
+                    <label className="label">Bairro</label>
+                    <input type="text" placeholder="Seu bairro" value={bairro} onChange={(e) => setBairro(e.target.value)} className="input" required />
+                  </div>
+                  <div className="input-group flex-1">
+                    <label className="label">Cidade</label>
+                    <input type="text" placeholder="Sua cidade" value={cidade} onChange={(e) => setCidade(e.target.value)} className="input" required />
+                  </div>
+                </div>
+              </>
+            )}
+
             <button type="submit" className="btn-primary" style={{ marginTop: '12px' }}>
               {isCriandoConta ? 'Cadastrar Conta' : 'Entrar no Sistema'}
             </button>
@@ -252,6 +425,97 @@ function App() {
   // Interface Principal
   return (
     <div className="container">
+      {perfilIncompleto && (
+        <div style={{ 
+          background: 'rgba(245, 158, 11, 0.15)',
+          border: '1px solid #f59e0b',
+          color: '#fbbf24', 
+          padding: '16px 24px', 
+          borderRadius: '12px',
+          margin: '0 auto 24px auto',
+          maxWidth: '800px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+            <span style={{ fontWeight: '500', lineHeight: '1.4' }}>Seu perfil está incompleto!<br />Atualize seus dados para continuar usando o sistema.</span>
+          </div>
+          <button onClick={() => setShowPerfilModal(true)} style={{ 
+            padding: '10px 20px', 
+            background: '#f59e0b', 
+            color: '#1e293b', 
+            border: 'none', 
+            borderRadius: '8px', 
+            cursor: 'pointer', 
+            fontWeight: 'bold',
+            whiteSpace: 'nowrap',
+            transition: 'background 0.2s',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.background = '#d97706'}
+          onMouseOut={(e) => e.currentTarget.style.background = '#f59e0b'}
+          >
+            Completar Perfil
+          </button>
+        </div>
+      )}
+
+      {showPerfilModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card-form" style={{ background: '#1e293b', border: '1px solid #334155', padding: '32px', borderRadius: '16px', maxWidth: '600px', width: '90%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+            <h2 className="title" style={{ marginBottom: '24px', color: '#f8fafc', borderBottom: '1px solid #334155', paddingBottom: '16px' }}>Meu Perfil</h2>
+            <form onSubmit={handleSavePerfil} className="form">
+              <div className="input-group">
+                <label className="label">Nome Completo</label>
+                <input type="text" placeholder="João da Silva" value={nomeCompleto} onChange={(e) => setNomeCompleto(e.target.value)} className="input" required />
+              </div>
+              <div className="form-row">
+                <div className="input-group flex-1">
+                  <label className="label">Data de Nascimento</label>
+                  <input type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} className="input" required />
+                </div>
+                <div className="input-group flex-1">
+                  <label className="label">CPF</label>
+                  <input type="text" placeholder="000.000.000-00" value={cpf} onChange={handleCpfChange} className="input" required />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="input-group flex-1">
+                  <label className="label">CEP</label>
+                  <input type="text" placeholder="00000-000" value={cep} onChange={handleCepChange} className="input" required />
+                </div>
+                <div className="input-group" style={{ flex: 2 }}>
+                  <label className="label">Estado</label>
+                  <input type="text" placeholder="UF" value={estado} onChange={(e) => setEstado(e.target.value)} className="input" required />
+                </div>
+              </div>
+              <div className="input-group">
+                <label className="label">Rua</label>
+                <input type="text" placeholder="Sua rua" value={rua} onChange={(e) => setRua(e.target.value)} className="input" required />
+              </div>
+              <div className="form-row">
+                <div className="input-group flex-1">
+                  <label className="label">Bairro</label>
+                  <input type="text" placeholder="Seu bairro" value={bairro} onChange={(e) => setBairro(e.target.value)} className="input" required />
+                </div>
+                <div className="input-group flex-1">
+                  <label className="label">Cidade</label>
+                  <input type="text" placeholder="Sua cidade" value={cidade} onChange={(e) => setCidade(e.target.value)} className="input" required />
+                </div>
+              </div>
+              <div className="button-group" style={{ marginTop: '24px' }}>
+                <button type="submit" className="btn-primary">Salvar Perfil</button>
+                <button type="button" className="btn-secondary" onClick={() => setShowPerfilModal(false)}>Cancelar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <header className="header">
         <div className="user-bar">
           <span>Conectado como: <strong>{usuario.email}</strong></span>
