@@ -118,7 +118,7 @@ async function seed() {
   console.log("====================================================\n");
 
   // Se o usuário passou email e senha como argumentos: node seed.js email@exemplo.com senha123
-  const [,, emailArg, senhaArg] = process.argv;
+  const [, , emailArg, senhaArg] = process.argv;
   if (emailArg && senhaArg) {
     try {
       console.log(`🔑 Autenticando com ${emailArg}...`);

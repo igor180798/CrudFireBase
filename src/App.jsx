@@ -22,6 +22,8 @@ import CartDrawer from './components/CartDrawer';
 const ICONE_SVG_PATH = '/sneaker.png';
 const TAMANHOS_PADRAO = ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44'];
 
+import { maskCPF, maskCEP, maskDate } from './components/Masks';
+
 export default function App() {
   const [usuario, setUsuario] = useState(null);
   const [perfilUsuario, setPerfilUsuario] = useState(null);
@@ -119,6 +121,8 @@ export default function App() {
     perfilUsuario.cep
   );
 
+  const isAdmin = perfilUsuario?.role === 'admin';
+
   useEffect(() => {
     if (!usuario) return;
     const unsubscribe = onSnapshot(collection(db, 'produtos'), (snapshot) => {
@@ -131,15 +135,29 @@ export default function App() {
     return () => unsubscribe();
   }, [usuario]);
 
+  const limparCamposAuth = () => {
+    setEmailAuth('');
+    setSenhaAuth('');
+    setNomeCompleto('');
+    setDataNascimento('');
+    setCpf('');
+    setRua('');
+    setBairro('');
+    setCidade('');
+    setEstado('');
+    setCep('');
+  };
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     try {
       if (isCadastrando) {
         const userCredential = await createUserWithEmailAndPassword(auth, emailAuth, senhaAuth);
         const uid = userCredential.user.uid;
-        const dadosPerfil = { email: emailAuth, nomeCompleto, dataNascimento, cpf, rua, bairro, cidade, estado, cep, criadoEm: new Date() };
+        const dadosPerfil = { email: emailAuth, nomeCompleto, dataNascimento, cpf, rua, bairro, cidade, estado, cep, role: 'cliente', criadoEm: new Date() };
         await setDoc(doc(db, 'usuarios', uid), dadosPerfil);
         setPerfilUsuario(dadosPerfil);
+        limparCamposAuth();
       } else {
         await signInWithEmailAndPassword(auth, emailAuth, senhaAuth);
       }
@@ -164,6 +182,7 @@ export default function App() {
   const handleLogout = async () => {
     await signOut(auth);
     setCarrinho([]);
+    limparCamposAuth();
   };
 
   const handleTamanhoEstoqueChange = (size, val) => {
@@ -309,7 +328,7 @@ export default function App() {
   if (!usuario) {
     return (
       <div className="min-h-screen bg-[#0b101d] text-slate-100 flex items-center justify-center p-4 font-sans">
-        <div className="bg-[#131a27] border border-slate-800 p-8 rounded-xl w-full max-w-md shadow-2xl">
+        <div className={`bg-[#131a27] border border-slate-800 p-8 rounded-xl w-full shadow-2xl ${isCadastrando ? 'max-w-2xl' : 'max-w-md'}`}>
           <div className="flex items-center justify-center gap-2 mb-2">
             <img src={ICONE_SVG_PATH} alt="Logo" className="w-8 h-8 object-contain" />
             <h2 className="text-2xl font-bold text-sky-400">
@@ -320,7 +339,115 @@ export default function App() {
             {isCadastrando ? 'Preencha seus dados' : 'Digite seu e-mail e senha para entrar'}
           </p>
 
-          <form onSubmit={handleAuthSubmit} className="space-y-3 text-xs">
+          <form onSubmit={handleAuthSubmit} className="space-y-3 text-xs max-h-[75vh] overflow-y-auto pr-1">
+            {isCadastrando && (
+              <>
+                <div>
+                  <label className="block mb-1 font-semibold text-slate-300">Nome completo</label>
+                  <input
+                    type="text"
+                    required
+                    value={nomeCompleto}
+                    onChange={(e) => setNomeCompleto(e.target.value)}
+                    placeholder="Digite seu nome completo"
+                    className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block mb-1 font-semibold text-slate-300">Data de nascimento</label>
+                    <input
+                      type="text"
+                      required
+                      value={dataNascimento}
+                      onChange={(e) => setDataNascimento(maskDate(e.target.value))}
+                      placeholder="DD/MM/AAAA"
+                      maxLength={10}
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block mb-1 font-semibold text-slate-300">CPF</label>
+                    <input
+                      type="text"
+                      required
+                      value={cpf}
+                      onChange={(e) => setCpf(maskCPF(e.target.value))}
+                      placeholder="000.000.000-00"
+                      maxLength={14}
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block mb-1 font-semibold text-slate-300">Rua / Endereço</label>
+                  <input
+                    type="text"
+                    required
+                    value={rua}
+                    onChange={(e) => setRua(e.target.value)}
+                    placeholder="Digite seu endereço"
+                    className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block mb-1 font-semibold text-slate-300">CEP</label>
+                    <input
+                      type="text"
+                      required
+                      value={cep}
+                      onChange={(e) => setCep(maskCEP(e.target.value))}
+                      placeholder="00000-000"
+                      maxLength={9}
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block mb-1 font-semibold text-slate-300">Bairro</label>
+                    <input
+                      type="text"
+                      required
+                      value={bairro}
+                      onChange={(e) => setBairro(e.target.value)}
+                      placeholder="Bairro"
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block mb-1 font-semibold text-slate-300">Estado</label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={2}
+                      value={estado}
+                      onChange={(e) => setEstado(e.target.value.toUpperCase())}
+                      placeholder="SP"
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600 uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block mb-1 font-semibold text-slate-300">Cidade</label>
+                  <input
+                    type="text"
+                    required
+                    value={cidade}
+                    onChange={(e) => setCidade(e.target.value)}
+                    placeholder="Digite sua cidade"
+                    className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                  />
+                </div>
+              </>
+            )}
+
             <div>
               <label className="block mb-1 font-semibold text-slate-300">E-mail</label>
               <input
@@ -328,9 +455,11 @@ export default function App() {
                 required
                 value={emailAuth}
                 onChange={(e) => setEmailAuth(e.target.value)}
-                className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                placeholder="seuemail@exemplo.com"
+                className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
               />
             </div>
+
             <div>
               <label className="block mb-1 font-semibold text-slate-300">Senha</label>
               <input
@@ -338,7 +467,8 @@ export default function App() {
                 required
                 value={senhaAuth}
                 onChange={(e) => setSenhaAuth(e.target.value)}
-                className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                placeholder="Digite sua senha"
+                className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
               />
             </div>
 
@@ -352,7 +482,10 @@ export default function App() {
 
           <div className="mt-4 text-center text-xs text-slate-400">
             <button
-              onClick={() => setIsCadastrando(!isCadastrando)}
+              onClick={() => {
+                setIsCadastrando(!isCadastrando);
+                limparCamposAuth();
+              }}
               className="text-sky-400 font-bold hover:underline"
             >
               {isCadastrando ? 'Já tenho conta' : 'Criar uma conta'}
@@ -424,111 +557,113 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 
           {/* Form Esquerda */}
-          <aside className="lg:col-span-4 bg-[#131a27] p-5 rounded-2xl border border-slate-800/80 space-y-4">
-            <h2 className="text-sm font-bold text-sky-400 flex items-center gap-1.5">
-              <span className="text-sky-400 font-extrabold text-base">+</span> {produtoEditandoId ? 'Editar Produto' : 'Novo Produto'}
-            </h2>
+          {isAdmin && (
+            <aside className="lg:col-span-4 bg-[#131a27] p-5 rounded-2xl border border-slate-800/80 space-y-4">
+              <h2 className="text-sm font-bold text-sky-400 flex items-center gap-1.5">
+                <span className="text-sky-400 font-extrabold text-base">+</span> {produtoEditandoId ? 'Editar Produto' : 'Novo Produto'}
+              </h2>
 
-            <form onSubmit={handleSalvarProduto} className="space-y-3.5 text-xs text-slate-300">
-              <div>
-                <label className="block mb-1 font-medium text-slate-300">Nome do Produto</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Tênis Esportivo"
-                  value={nomeProduto}
-                  onChange={(e) => setNomeProduto(e.target.value)}
-                  className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
-                />
-              </div>
-
-              <div>
-                <label className="block mb-1 font-medium text-slate-300">Imagem do Produto (Arquivo Local)</label>
-                <label className="border border-dashed border-slate-800 bg-[#0b101d] rounded-lg p-2.5 text-center cursor-pointer hover:border-sky-500 transition block">
-                  <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                  <span className="text-amber-500 font-bold flex items-center justify-center gap-1.5">
-                    📁 {imagemUrl ? 'Trocar Imagem' : 'Selecionar Imagem'}
-                  </span>
-                </label>
-              </div>
-
-              {imagemUrl && (
-                <div className="bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-center">
-                  <img src={imagemUrl} alt="Preview" className="h-24 mx-auto object-contain rounded" />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2.5">
+              <form onSubmit={handleSalvarProduto} className="space-y-3.5 text-xs text-slate-300">
                 <div>
-                  <label className="block mb-1 font-medium text-slate-300">Preço</label>
+                  <label className="block mb-1 font-medium text-slate-300">Nome do Produto</label>
                   <input
                     type="text"
-                    placeholder="R$ 0,00"
-                    value={precoFormatado}
-                    onChange={handlePrecoChange}
+                    placeholder="Ex: Tênis Esportivo"
+                    value={nomeProduto}
+                    onChange={(e) => setNomeProduto(e.target.value)}
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
                   />
                 </div>
+
                 <div>
-                  <label className="block mb-1 font-medium text-slate-300">Estoque Total</label>
-                  <input
-                    type="number"
-                    readOnly
-                    value={estoqueTotalForm}
-                    className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-sky-400 font-bold cursor-not-allowed"
-                  />
+                  <label className="block mb-1 font-medium text-slate-300">Imagem do Produto (Arquivo Local)</label>
+                  <label className="border border-dashed border-slate-800 bg-[#0b101d] rounded-lg p-2.5 text-center cursor-pointer hover:border-sky-500 transition block">
+                    <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                    <span className="text-amber-500 font-bold flex items-center justify-center gap-1.5">
+                      📁 {imagemUrl ? 'Trocar Imagem' : 'Selecionar Imagem'}
+                    </span>
+                  </label>
                 </div>
-              </div>
 
-              <div>
-                <label className="block mb-1.5 font-medium text-slate-300">Estoque por Tamanho</label>
-                <div className="grid grid-cols-5 gap-1.5 text-center">
-                  {TAMANHOS_PADRAO.map((size) => (
-                    <div key={size} className="bg-[#0b101d] border border-slate-800 p-1 rounded-md">
-                      <span className="block text-[10px] text-slate-400 font-bold">{size}</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={estoqueTamanhos[size] ?? ''}
-                        onChange={(e) => handleTamanhoEstoqueChange(size, e.target.value)}
-                        placeholder="0"
-                        className="w-full bg-transparent text-center text-xs text-slate-200 focus:outline-none"
-                      />
+                {imagemUrl && (
+                  <div className="bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-center">
+                    <img src={imagemUrl} alt="Preview" className="h-24 mx-auto object-contain rounded" />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block mb-1 font-medium text-slate-300">Preço</label>
+                    <input
+                      type="text"
+                      placeholder="R$ 0,00"
+                      value={precoFormatado}
+                      onChange={handlePrecoChange}
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 font-medium text-slate-300">Estoque Total</label>
+                    <input
+                      type="number"
+                      readOnly
+                      value={estoqueTotalForm}
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-sky-400 font-bold cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block mb-1.5 font-medium text-slate-300">Estoque por Tamanho</label>
+                  <div className="grid grid-cols-5 gap-1.5 text-center">
+                    {TAMANHOS_PADRAO.map((size) => (
+                      <div key={size} className="bg-[#0b101d] border border-slate-800 p-1 rounded-md">
+                        <span className="block text-[10px] text-slate-400 font-bold">{size}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={estoqueTamanhos[size] ?? ''}
+                          onChange={(e) => handleTamanhoEstoqueChange(size, e.target.value)}
+                          placeholder="0"
+                          className="w-full bg-transparent text-center text-xs text-slate-200 focus:outline-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  {produtoEditandoId ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition"
+                      >
+                        Atualizar Produto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelarEdicao}
+                        className="bg-[#1f2937] hover:bg-slate-700 text-slate-300 font-bold px-3 py-2.5 rounded-lg text-xs transition"
+                      >
+                        Cancelar
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-1">
-                {produtoEditandoId ? (
-                  <div className="flex gap-2">
+                  ) : (
                     <button
                       type="submit"
-                      className="flex-1 bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition"
+                      className="w-full bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition"
                     >
-                      Atualizar Produto
+                      Cadastrar Produto
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelarEdicao}
-                      className="bg-[#1f2937] hover:bg-slate-700 text-slate-300 font-bold px-3 py-2.5 rounded-lg text-xs transition"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="submit"
-                    className="w-full bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition"
-                  >
-                    Cadastrar Produto
-                  </button>
-                )}
-              </div>
-            </form>
-          </aside>
+                  )}
+                </div>
+              </form>
+            </aside>
+          )}
 
           {/* Produtos Direita */}
-          <section className="lg:col-span-8 space-y-3.5">
+          <section className={isAdmin ? "lg:col-span-8 space-y-3.5" : "lg:col-span-12 space-y-3.5"}>
 
             {/* Buscador + Select */}
             <div className="bg-[#131a27] p-3 rounded-xl border border-slate-800/80 flex gap-3">
@@ -561,8 +696,8 @@ export default function App() {
                   key={size}
                   onClick={() => setFiltroTamanho(size)}
                   className={`px-3 py-1 rounded-md text-xs font-semibold transition whitespace-nowrap ${filtroTamanho === size
-                      ? 'bg-[#0284c7] text-white'
-                      : 'bg-[#0b101d] text-slate-300 border border-slate-800 hover:border-slate-700'
+                    ? 'bg-[#0284c7] text-white'
+                    : 'bg-[#0b101d] text-slate-300 border border-slate-800 hover:border-slate-700'
                     }`}
                 >
                   {size}
@@ -590,6 +725,7 @@ export default function App() {
                     onEdit={handleIniciarEdicao}
                     onAddToCart={handleAddToCart}
                     onDelete={handleExcluirProduto}
+                    isAdmin={isAdmin}
                   />
                 ))}
               </div>
@@ -627,7 +763,7 @@ export default function App() {
                     type="date"
                     required
                     value={dataNascimento}
-                    onChange={(e) => setDataNascimento(e.target.value)}
+                    onChange={(e) => setDataNascimento(maskDate(e.target.value))}
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-slate-200"
                   />
                 </div>
@@ -637,7 +773,7 @@ export default function App() {
                     type="text"
                     required
                     value={cpf}
-                    onChange={(e) => setCpf(e.target.value)}
+                    onChange={(e) => setCpf(maskCPF(e.target.value))}
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-slate-200"
                   />
                 </div>
@@ -731,7 +867,7 @@ export default function App() {
   );
 }
 
-function CardProdutoOriginal({ produto, isEditing, onEdit, onAddToCart, onDelete }) {
+function CardProdutoOriginal({ produto, isEditing, onEdit, onAddToCart, onDelete, isAdmin }) {
   const [tamanhoSelecionado, setTamanhoSelecionado] = useState('');
 
   const nome = produto.nome || 'Produto sem nome';
@@ -777,8 +913,8 @@ function CardProdutoOriginal({ produto, isEditing, onEdit, onAddToCart, onDelete
                     onAddToCart(produto, size);
                   }}
                   className={`text-[10px] px-1.5 py-0.5 rounded font-bold border transition ${tamanhoSelecionado === size
-                      ? 'bg-[#0284c7] border-sky-500 text-white'
-                      : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-700'
+                    ? 'bg-[#0284c7] border-sky-500 text-white'
+                    : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-700'
                     }`}
                 >
                   {size} ({stock})
@@ -789,20 +925,22 @@ function CardProdutoOriginal({ produto, isEditing, onEdit, onAddToCart, onDelete
         </div>
       </div>
 
-      <div className="pt-2 border-t border-slate-800/80 flex gap-2">
-        <button
-          onClick={() => onEdit(produto)}
-          className="flex-1 bg-[#1f2937] hover:bg-slate-700 text-slate-200 font-bold py-1.5 rounded text-[11px] transition border border-slate-700/50"
-        >
-          Editar
-        </button>
-        <button
-          onClick={() => onDelete(produto.id)}
-          className="bg-red-950/30 hover:bg-red-900/50 text-red-400 font-bold px-3 py-1.5 rounded text-[11px] border border-red-900/40 transition"
-        >
-          Excluir
-        </button>
-      </div>
+      {isAdmin && (
+        <div className="pt-2 border-t border-slate-800/80 flex gap-2">
+          <button
+            onClick={() => onEdit(produto)}
+            className="flex-1 bg-[#1f2937] hover:bg-slate-700 text-slate-200 font-bold py-1.5 rounded text-[11px] transition border border-slate-700/50"
+          >
+            Editar
+          </button>
+          <button
+            onClick={() => onDelete(produto.id)}
+            className="bg-red-950/30 hover:bg-red-900/50 text-red-400 font-bold px-3 py-1.5 rounded text-[11px] border border-red-900/40 transition"
+          >
+            Excluir
+          </button>
+        </div>
+      )}
     </div>
   );
 }
