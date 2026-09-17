@@ -48,6 +48,7 @@ export default function App() {
   // Catálogo e Carrinho
   const [produtos, setProdutos] = useState([]);
   const [carrinho, setCarrinho] = useState([]);
+  const [carrinhoCarregado, setCarrinhoCarregado] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Form Produto
@@ -93,9 +94,16 @@ export default function App() {
         const dados = docSnap.data();
         setPerfilUsuario(dados);
         preencherCamposPerfil(dados);
+
+        // RECUPERA O CARRINHO SALVO DO FIRESTORE
+        if (dados.carrinho && Array.isArray(dados.carrinho)) {
+          setCarrinho(dados.carrinho);
+        }
       }
+      setCarrinhoCarregado(true); // <-- ADICIONE ESTA LINHA (avisa que já pode salvar alterações daqui pra frente)
     } catch (err) {
       console.error(err);
+      setCarrinhoCarregado(true);
     }
   };
 
@@ -135,6 +143,22 @@ export default function App() {
     return () => unsubscribe();
   }, [usuario]);
 
+  // SALVA O CARRINHO NO FIRESTORE APENAS APÓS TER CARREGADO OS DADOS INICIAIS
+  useEffect(() => {
+    if (!usuario || !carrinhoCarregado) return; // <-- A trava está aqui
+
+    const salvarCarrinhoNoBanco = async () => {
+      try {
+        const userDocRef = doc(db, 'usuarios', usuario.uid);
+        await updateDoc(userDocRef, { carrinho: carrinho });
+      } catch (err) {
+        console.error("Erro ao salvar carrinho:", err);
+      }
+    };
+
+    salvarCarrinhoNoBanco();
+  }, [carrinho, usuario, carrinhoCarregado]); // <-- E o carrinhoCarregado aqui nas dependências
+
   const limparCamposAuth = () => {
     setEmailAuth('');
     setSenhaAuth('');
@@ -154,7 +178,7 @@ export default function App() {
       if (isCadastrando) {
         const userCredential = await createUserWithEmailAndPassword(auth, emailAuth, senhaAuth);
         const uid = userCredential.user.uid;
-        const dadosPerfil = { email: emailAuth, nomeCompleto, dataNascimento, cpf, rua, bairro, cidade, estado, cep, role: 'cliente', criadoEm: new Date() };
+        const dadosPerfil = { email: emailAuth, nomeCompleto, dataNascimento, cpf, rua, bairro, cidade, estado, cep, role: 'cliente', carrinho: [], criadoEm: new Date() };
         await setDoc(doc(db, 'usuarios', uid), dadosPerfil);
         setPerfilUsuario(dadosPerfil);
         limparCamposAuth();
@@ -181,7 +205,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    setCarrinho([]);
+    setCarrinho([]); // Limpa o carrinho localmente
     limparCamposAuth();
   };
 
