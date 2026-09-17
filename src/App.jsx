@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import {
-  collection,
-  addDoc,
-  onSnapshot,
-  deleteDoc,
   doc,
+  getDoc,
   setDoc,
   updateDoc,
-  getDoc
+  deleteDoc, // (Caso use deleteDoc e também esteja faltando)
+  collection,
+  addDoc,
+  runTransaction,
+  serverTimestamp,
+  onSnapshot // <--- ADICIONE ESTA LINHA AQUI
 } from 'firebase/firestore';
 import {
   signInWithEmailAndPassword,
@@ -290,6 +292,84 @@ export default function App() {
     if (window.confirm('Tem certeza que deseja excluir este produto?')) {
       await deleteDoc(doc(db, 'produtos', id));
       if (produtoEditandoId === id) handleCancelarEdicao();
+    }
+  };
+
+  const handleFinalizarPedido = async () => {
+    if (!usuario) {
+      alert("Você precisa estar logado para finalizar o pedido.");
+      return;
+    }
+
+    if (carrinho.length === 0) {
+      alert("Seu carrinho está vazio!");
+      return;
+    }
+
+    try {
+      // 1. Executa uma transação para atualizar o estoque com segurança
+      await runTransaction(db, async (transaction) => {
+        // Primeiro: Verifica o estoque atual de cada item do carrinho no banco
+        for (const item of carrinho) {
+          const produtoRef = doc(db, 'produtos', item.id);
+          const produtoDoc = await transaction.get(produtoRef);
+
+          if (!produtoDoc.exists()) {
+            throw new Error(`O produto ${item.nome || 'do carrinho'} não existe mais.`);
+          }
+
+          const dadosProduto = produtoDoc.data();
+          // CORRIGIDO: lendo de 'tamanhos' (que é como você salva no cadastro)
+          const estoqueTamanhos = dadosProduto.tamanhos || dadosProduto.estoquePorTamanho || {};
+
+          // CORRIGIDO: lendo 'item.qtd' que é o padrão usado no seu carrinho
+          const qtdDesejada = item.qtd || item.quantidade || 1;
+          const tamanhoEscolhido = String(item.tamanho); // Garante que é string
+
+          const estoqueAtualDoTamanho = Number(estoqueTamanhos[tamanhoEscolhido]) || 0;
+
+          // Valida se tem estoque suficiente
+          if (estoqueAtualDoTamanho < qtdDesejada) {
+            throw new Error(`Estoque insuficiente para o produto "${dadosProduto.nome}" no tamanho ${tamanhoEscolhido}. Disponível: ${estoqueAtualDoTamanho}`);
+          }
+
+          // Subtrai a quantidade do estoque daquele tamanho específico
+          estoqueTamanhos[tamanhoEscolhido] = estoqueAtualDoTamanho - qtdDesejada;
+
+          // Recalcula o estoque total somando todos os tamanhos
+          const novoEstoqueTotal = Object.values(estoqueTamanhos).reduce((acc, val) => acc + Number(val), 0);
+
+          // Atualiza o produto na transação (atualizando 'tamanhos' e 'estoqueTotal')
+          transaction.update(produtoRef, {
+            tamanhos: estoqueTamanhos,
+            estoqueTotal: novoEstoqueTotal
+          });
+        }
+      });
+
+      // 2. Se a transação deu certo, salva o registro do pedido na coleção 'pedidos'
+      const valorTotal = carrinho.reduce((total, item) => total + ((Number(item.preco) || 0) * (item.qtd || item.quantidade || 1)), 0);
+
+      await addDoc(collection(db, 'pedidos'), {
+        clienteId: usuario.uid,
+        clienteEmail: usuario.email || perfilUsuario?.email,
+        itens: carrinho,
+        total: valorTotal,
+        status: 'Concluído',
+        criadoEm: serverTimestamp()
+      });
+
+      // 3. Limpa o carrinho local e no Firestore do usuário
+      setCarrinho([]);
+      const userDocRef = doc(db, 'usuarios', usuario.uid);
+      await updateDoc(userDocRef, { carrinho: [] });
+
+      alert("Pedido finalizado com sucesso! O estoque foi atualizado.");
+      setIsCartOpen(false);
+
+    } catch (error) {
+      console.error("Erro ao finalizar pedido:", error);
+      alert(error.message || "Erro ao processar a compra. Tente novamente.");
     }
   };
 
@@ -886,6 +966,7 @@ export default function App() {
         cartItems={carrinho}
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveItem}
+        onCheckout={handleFinalizarPedido}
       />
     </div>
   );

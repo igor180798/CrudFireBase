@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantity, onRemoveItem }) {
+export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantity, onRemoveItem, onCheckout }) {
     if (!isOpen) return null;
 
     const total = cartItems.reduce((acc, item) => acc + (Number(item.preco) || 0) * item.qtd, 0);
@@ -99,6 +99,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                         </div>
 
                         <button
+                            onClick={onCheckout}
                             disabled={cartItems.length === 0}
                             className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:hover:bg-sky-600 text-white font-bold py-3 rounded-xl text-xs transition shadow-lg shadow-sky-600/20"
                         >
