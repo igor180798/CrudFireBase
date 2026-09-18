@@ -5,12 +5,12 @@ import {
   getDoc,
   setDoc,
   updateDoc,
-  deleteDoc, // (Caso use deleteDoc e também esteja faltando)
+  deleteDoc,
   collection,
   addDoc,
   runTransaction,
   serverTimestamp,
-  onSnapshot // <--- ADICIONE ESTA LINHA AQUI
+  onSnapshot
 } from 'firebase/firestore';
 import {
   signInWithEmailAndPassword,
@@ -97,12 +97,11 @@ export default function App() {
         setPerfilUsuario(dados);
         preencherCamposPerfil(dados);
 
-        // RECUPERA O CARRINHO SALVO DO FIRESTORE
         if (dados.carrinho && Array.isArray(dados.carrinho)) {
           setCarrinho(dados.carrinho);
         }
       }
-      setCarrinhoCarregado(true); // <-- ADICIONE ESTA LINHA (avisa que já pode salvar alterações daqui pra frente)
+      setCarrinhoCarregado(true);
     } catch (err) {
       console.error(err);
       setCarrinhoCarregado(true);
@@ -118,6 +117,28 @@ export default function App() {
     setCidade(dados.cidade || '');
     setEstado(dados.estado || '');
     setCep(dados.cep || '');
+  };
+
+  const buscarCep = async (cepInformado) => {
+    const cepLimpo = cepInformado.replace(/\D/g, '');
+
+    if (cepLimpo.length !== 8) return;
+
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+      const data = await response.json();
+
+      if (!data.erro) {
+        setRua(data.logradouro || '');
+        setBairro(data.bairro || '');
+        setCidade(data.localidade || '');
+        setEstado(data.uf || '');
+      } else {
+        alert('CEP não encontrado.');
+      }
+    } catch (error) {
+      console.error('Erro ao buscar CEP:', error);
+    }
   };
 
   const perfilEstaIncompleto = !perfilUsuario || !(
@@ -145,9 +166,8 @@ export default function App() {
     return () => unsubscribe();
   }, [usuario]);
 
-  // SALVA O CARRINHO NO FIRESTORE APENAS APÓS TER CARREGADO OS DADOS INICIAIS
   useEffect(() => {
-    if (!usuario || !carrinhoCarregado) return; // <-- A trava está aqui
+    if (!usuario || !carrinhoCarregado) return;
 
     const salvarCarrinhoNoBanco = async () => {
       try {
@@ -159,7 +179,7 @@ export default function App() {
     };
 
     salvarCarrinhoNoBanco();
-  }, [carrinho, usuario, carrinhoCarregado]); // <-- E o carrinhoCarregado aqui nas dependências
+  }, [carrinho, usuario, carrinhoCarregado]);
 
   const limparCamposAuth = () => {
     setEmailAuth('');
@@ -207,7 +227,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    setCarrinho([]); // Limpa o carrinho localmente
+    setCarrinho([]);
     limparCamposAuth();
   };
 
@@ -307,9 +327,7 @@ export default function App() {
     }
 
     try {
-      // 1. Executa uma transação para atualizar o estoque com segurança
       await runTransaction(db, async (transaction) => {
-        // Primeiro: Verifica o estoque atual de cada item do carrinho no banco
         for (const item of carrinho) {
           const produtoRef = doc(db, 'produtos', item.id);
           const produtoDoc = await transaction.get(produtoRef);
@@ -319,27 +337,18 @@ export default function App() {
           }
 
           const dadosProduto = produtoDoc.data();
-          // CORRIGIDO: lendo de 'tamanhos' (que é como você salva no cadastro)
           const estoqueTamanhos = dadosProduto.tamanhos || dadosProduto.estoquePorTamanho || {};
-
-          // CORRIGIDO: lendo 'item.qtd' que é o padrão usado no seu carrinho
           const qtdDesejada = item.qtd || item.quantidade || 1;
-          const tamanhoEscolhido = String(item.tamanho); // Garante que é string
-
+          const tamanhoEscolhido = String(item.tamanho);
           const estoqueAtualDoTamanho = Number(estoqueTamanhos[tamanhoEscolhido]) || 0;
 
-          // Valida se tem estoque suficiente
           if (estoqueAtualDoTamanho < qtdDesejada) {
             throw new Error(`Estoque insuficiente para o produto "${dadosProduto.nome}" no tamanho ${tamanhoEscolhido}. Disponível: ${estoqueAtualDoTamanho}`);
           }
 
-          // Subtrai a quantidade do estoque daquele tamanho específico
           estoqueTamanhos[tamanhoEscolhido] = estoqueAtualDoTamanho - qtdDesejada;
-
-          // Recalcula o estoque total somando todos os tamanhos
           const novoEstoqueTotal = Object.values(estoqueTamanhos).reduce((acc, val) => acc + Number(val), 0);
 
-          // Atualiza o produto na transação (atualizando 'tamanhos' e 'estoqueTotal')
           transaction.update(produtoRef, {
             tamanhos: estoqueTamanhos,
             estoqueTotal: novoEstoqueTotal
@@ -347,7 +356,6 @@ export default function App() {
         }
       });
 
-      // 2. Se a transação deu certo, salva o registro do pedido na coleção 'pedidos'
       const valorTotal = carrinho.reduce((total, item) => total + ((Number(item.preco) || 0) * (item.qtd || item.quantidade || 1)), 0);
 
       await addDoc(collection(db, 'pedidos'), {
@@ -359,7 +367,6 @@ export default function App() {
         criadoEm: serverTimestamp()
       });
 
-      // 3. Limpa o carrinho local e no Firestore do usuário
       setCarrinho([]);
       const userDocRef = doc(db, 'usuarios', usuario.uid);
       await updateDoc(userDocRef, { carrinho: [] });
@@ -428,7 +435,6 @@ export default function App() {
     );
   }
 
-  // TELA DE LOGIN / CADASTRO
   if (!usuario) {
     return (
       <div className="min-h-screen bg-[#0b101d] text-slate-100 flex items-center justify-center p-4 font-sans">
@@ -505,7 +511,11 @@ export default function App() {
                       type="text"
                       required
                       value={cep}
-                      onChange={(e) => setCep(maskCEP(e.target.value))}
+                      onChange={(e) => {
+                        const cepFormatado = maskCEP(e.target.value);
+                        setCep(cepFormatado);
+                        buscarCep(cepFormatado);
+                      }}
                       placeholder="00000-000"
                       maxLength={9}
                       className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 placeholder-slate-600"
@@ -600,13 +610,10 @@ export default function App() {
     );
   }
 
-  // TELA PRINCIPAL
   return (
     <div className="min-h-screen bg-[#0b101d] text-slate-100 font-sans py-4 px-6">
-
       <div className="max-w-6xl mx-auto space-y-4">
 
-        {/* Topo Limpo Exatamente Igual à Imagem */}
         <div className="flex justify-between items-center text-xs py-1">
           <span className="text-slate-400">
             Conectado como: <strong className="text-sky-400 font-semibold">{perfilUsuario?.nomeCompleto || usuario.email}</strong>
@@ -623,7 +630,6 @@ export default function App() {
               className="bg-[#1f2937] hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700/50 font-semibold flex items-center gap-1.5 transition text-xs"
             >
               Sair
-              {/* Ícone da Portinha */}
               <svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
               </svg>
@@ -631,7 +637,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ALERTA DE PERFIL */}
         {perfilEstaIncompleto && (
           <div className="bg-amber-950/40 border border-amber-800/60 p-3 rounded-xl flex items-center justify-between text-xs">
             <span className="text-amber-200">⚠️ Seu perfil está incompleto! Complete seus dados cadastrais.</span>
@@ -644,23 +649,15 @@ export default function App() {
           </div>
         )}
 
-        {/* Header com o Sneaker Vermelho/Branco */}
         <header className="text-center py-2">
           <h1 className="text-3xl font-extrabold text-white flex items-center justify-center gap-2">
-            <img
-              src={ICONE_SVG_PATH}
-              alt="Icon"
-              className="w-9 h-9 object-contain"
-            />
+            <img src={ICONE_SVG_PATH} alt="Icon" className="w-9 h-9 object-contain" />
             Catálogo de Produtos
           </h1>
           <p className="text-xs text-slate-400 mt-1">Gerencie e visualize seu inventário em tempo real</p>
         </header>
 
-        {/* Layout Principal Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-
-          {/* Form Esquerda */}
           {isAdmin && (
             <aside className="lg:col-span-4 bg-[#131a27] p-5 rounded-2xl border border-slate-800/80 space-y-4">
               <h2 className="text-sm font-bold text-sky-400 flex items-center gap-1.5">
@@ -739,25 +736,15 @@ export default function App() {
                 <div className="pt-1">
                   {produtoEditandoId ? (
                     <div className="flex gap-2">
-                      <button
-                        type="submit"
-                        className="flex-1 bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition"
-                      >
+                      <button type="submit" className="flex-1 bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition">
                         Atualizar Produto
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleCancelarEdicao}
-                        className="bg-[#1f2937] hover:bg-slate-700 text-slate-300 font-bold px-3 py-2.5 rounded-lg text-xs transition"
-                      >
+                      <button type="button" onClick={handleCancelarEdicao} className="bg-[#1f2937] hover:bg-slate-700 text-slate-300 font-bold px-3 py-2.5 rounded-lg text-xs transition">
                         Cancelar
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="submit"
-                      className="w-full bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition"
-                    >
+                    <button type="submit" className="w-full bg-[#0284c7] hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition">
                       Cadastrar Produto
                     </button>
                   )}
@@ -766,10 +753,7 @@ export default function App() {
             </aside>
           )}
 
-          {/* Produtos Direita */}
           <section className={isAdmin ? "lg:col-span-8 space-y-3.5" : "lg:col-span-12 space-y-3.5"}>
-
-            {/* Buscador + Select */}
             <div className="bg-[#131a27] p-3 rounded-xl border border-slate-800/80 flex gap-3">
               <div className="relative flex-1">
                 <input
@@ -792,16 +776,13 @@ export default function App() {
               </select>
             </div>
 
-            {/* Filtros de Tamanho */}
             <div className="bg-[#131a27] p-3 rounded-xl border border-slate-800/80 flex items-center gap-1.5 text-xs overflow-x-auto">
               <span className="text-slate-400 font-medium whitespace-nowrap mr-1">Filtrar por Tamanho:</span>
               {['Todos', ...TAMANHOS_PADRAO].map((size) => (
                 <button
                   key={size}
                   onClick={() => setFiltroTamanho(size)}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition whitespace-nowrap ${filtroTamanho === size
-                    ? 'bg-[#0284c7] text-white'
-                    : 'bg-[#0b101d] text-slate-300 border border-slate-800 hover:border-slate-700'
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition whitespace-nowrap ${filtroTamanho === size ? 'bg-[#0284c7] text-white' : 'bg-[#0b101d] text-slate-300 border border-slate-800 hover:border-slate-700'
                     }`}
                 >
                   {size}
@@ -809,12 +790,10 @@ export default function App() {
               ))}
             </div>
 
-            {/* Titulo Produtos Disponiveis */}
             <h3 className="text-xs font-bold text-slate-200 pt-1">
               Produtos Disponíveis ({produtosFiltrados.length})
             </h3>
 
-            {/* Grid de Cards */}
             {produtosFiltrados.length === 0 ? (
               <div className="bg-[#131a27] border border-slate-800 rounded-xl p-8 text-center text-slate-500 text-xs">
                 Nenhum produto cadastrado.
@@ -835,11 +814,10 @@ export default function App() {
               </div>
             )}
           </section>
-
         </div>
       </div>
 
-      {/* MODAL PERFIL */}
+      {/* MODAL PERFIL CORRIGIDO (Input de data atualizado para aceitar máscara text) */}
       {isModalPerfilOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-xs space-y-4">
@@ -864,10 +842,12 @@ export default function App() {
                 <div>
                   <label className="block mb-1 text-slate-300">Data de Nascimento</label>
                   <input
-                    type="date"
+                    type="text"
                     required
                     value={dataNascimento}
                     onChange={(e) => setDataNascimento(maskDate(e.target.value))}
+                    placeholder="DD/MM/AAAA"
+                    maxLength={10}
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-slate-200"
                   />
                 </div>
@@ -878,6 +858,8 @@ export default function App() {
                     required
                     value={cpf}
                     onChange={(e) => setCpf(maskCPF(e.target.value))}
+                    placeholder="000.000.000-00"
+                    maxLength={14}
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-slate-200"
                   />
                 </div>
@@ -900,7 +882,13 @@ export default function App() {
                     type="text"
                     required
                     value={cep}
-                    onChange={(e) => setCep(e.target.value)}
+                    onChange={(e) => {
+                      const cepFormatado = maskCEP(e.target.value);
+                      setCep(cepFormatado);
+                      buscarCep(cepFormatado);
+                    }}
+                    maxLength={9}
+                    placeholder="00000-000"
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-slate-200"
                   />
                 </div>
@@ -934,7 +922,7 @@ export default function App() {
                     required
                     maxLength={2}
                     value={estado}
-                    onChange={(e) => setEstado(e.target.value)}
+                    onChange={(e) => setEstado(e.target.value.toUpperCase())}
                     className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2 text-slate-200 uppercase"
                   />
                 </div>
