@@ -119,9 +119,9 @@ export default function App() {
     setCep(dados.cep || '');
   };
 
+  // Função de Busca Automática de CEP
   const buscarCep = async (cepInformado) => {
     const cepLimpo = cepInformado.replace(/\D/g, '');
-
     if (cepLimpo.length !== 8) return;
 
     try {
@@ -139,6 +139,31 @@ export default function App() {
     } catch (error) {
       console.error('Erro ao buscar CEP:', error);
     }
+  };
+
+  // Funções de Validação de E-mail e CPF
+  const validarEmail = (email) => {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+  };
+
+  const validarCPF = (cpfStr) => {
+    const cpfLimpo = cpfStr.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11 || /^(\d)\1+$/.test(cpfLimpo)) return false;
+
+    let soma = 0;
+    for (let i = 0; i < 9; i++) soma += parseInt(cpfLimpo.charAt(i)) * (10 - i);
+    let resto = 11 - (soma % 11);
+    let digito1 = resto === 10 || resto === 11 ? 0 : resto;
+    if (digito1 !== parseInt(cpfLimpo.charAt(9))) return false;
+
+    soma = 0;
+    for (let i = 0; i < 10; i++) soma += parseInt(cpfLimpo.charAt(i)) * (11 - i);
+    resto = 11 - (soma % 11);
+    let digito2 = resto === 10 || resto === 11 ? 0 : resto;
+    if (digito2 !== parseInt(cpfLimpo.charAt(10))) return false;
+
+    return true;
   };
 
   const perfilEstaIncompleto = !perfilUsuario || !(
@@ -198,6 +223,15 @@ export default function App() {
     e.preventDefault();
     try {
       if (isCadastrando) {
+        if (!validarEmail(emailAuth)) {
+          alert('Por favor, insira um e-mail válido.');
+          return;
+        }
+        if (!validarCPF(cpf)) {
+          alert('O CPF informado é inválido. Verifique os números.');
+          return;
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, emailAuth, senhaAuth);
         const uid = userCredential.user.uid;
         const dadosPerfil = { email: emailAuth, nomeCompleto, dataNascimento, cpf, rua, bairro, cidade, estado, cep, role: 'cliente', carrinho: [], criadoEm: new Date() };
@@ -215,6 +249,12 @@ export default function App() {
   const salvarPerfilComplementar = async (e) => {
     e.preventDefault();
     if (!usuario) return;
+
+    if (!validarCPF(cpf)) {
+      alert('O CPF informado é inválido. Verifique os números.');
+      return;
+    }
+
     try {
       const dadosPerfil = { email: usuario.email, nomeCompleto, dataNascimento, cpf, rua, bairro, cidade, estado, cep, atualizadoEm: new Date() };
       await setDoc(doc(db, 'usuarios', usuario.uid), dadosPerfil, { merge: true });
@@ -817,7 +857,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* MODAL PERFIL CORRIGIDO (Input de data atualizado para aceitar máscara text) */}
+      {/* MODAL PERFIL */}
       {isModalPerfilOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-xs space-y-4">
@@ -1006,8 +1046,8 @@ function CardProdutoOriginal({ produto, isEditing, onEdit, onAddToCart, onDelete
                     onAddToCart(produto, size);
                   }}
                   className={`text-[10px] px-1.5 py-0.5 rounded font-bold border transition ${tamanhoSelecionado === size
-                    ? 'bg-[#0284c7] border-sky-500 text-white'
-                    : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-700'
+                      ? 'bg-[#0284c7] border-sky-500 text-white'
+                      : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-700'
                     }`}
                 >
                   {size} ({stock})
