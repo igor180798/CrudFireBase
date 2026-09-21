@@ -6,7 +6,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
     const total = cartItems.reduce((acc, item) => acc + (Number(item.preco) || 0) * item.qtd, 0);
 
     return (
-        <div className="fixed inset-0 z-50 overflow-hidden">
+        <div className="fixed inset-0 z-50 overflow-hidden text-xs">
             {/* Overlay Escuro */}
             <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
@@ -18,12 +18,12 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
 
                     {/* Header */}
                     <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                        <h2 className="text-base font-bold text-sky-400 flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-sky-400 flex items-center gap-2">
                             🛒 Meu Carrinho
                         </h2>
                         <button
                             onClick={onClose}
-                            className="text-slate-400 hover:text-white p-1 text-lg font-bold"
+                            className="text-slate-400 hover:text-white p-1 text-sm font-bold"
                         >
                             ✕
                         </button>
@@ -89,11 +89,11 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                         )}
                     </div>
 
-                    {/* Footer */}
+                    {/* Footer com Botão de Finalizar Pedido */}
                     <div className="p-5 border-t border-slate-800 bg-slate-950 space-y-4">
                         <div className="flex justify-between items-center text-sm">
                             <span className="text-slate-400">Total:</span>
-                            <span className="text-xl font-extrabold text-sky-400">
+                            <span className="text-lg font-extrabold text-sky-400">
                                 R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             </span>
                         </div>
@@ -101,7 +101,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                         <button
                             onClick={onCheckout}
                             disabled={cartItems.length === 0}
-                            className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:hover:bg-sky-600 text-white font-bold py-3 rounded-xl text-xs transition shadow-lg shadow-sky-600/20"
+                            className="w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:hover:bg-sky-600 text-white font-bold py-3 rounded-xl text-xs transition shadow-lg shadow-sky-600/20 cursor-pointer"
                         >
                             Finalizar Pedido
                         </button>
