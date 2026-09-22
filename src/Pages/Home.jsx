@@ -1,243 +1,182 @@
-import React, { useState } from 'react';
-import ModalDetalhesProduto from '../components/ModalDetalhesProduto';
+import React, { useState, useEffect } from 'react';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { db } from '../services/firebaseConfig'; // Ajuste o caminho conforme o seu projeto
 
-export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosPerfil, IrParaPerfil }) {
-  const [tamanhosSelecionados, setTamanhosSelecionados] = useState({});
-  const [termoBusca, setTermoBusca] = useState('');
-  const [tamanhoFiltro, setTamanhoFiltro] = useState('todos');
-  const [ordenacaoPreco, setOrdenacaoPreco] = useState('padrao');
+export default function PainelAdmin({ currentUser, dispararToast }) {
+  const [usuarios, setUsuarios] = useState([]);
+  const [utilizadorSelecionado, setUtilizadorSelecionado] = useState(null);
+  const [carregando, setCarregando] = useState(true);
 
-  // Estado para o Modal de Detalhes
-  const [produtoSelecionadoModal, setProdutoSelecionadoModal] = useState(null);
-
-  // Verificação rigorosa se existe algum campo essencial vazio ou em falta no perfil
-  const camposObrigatorios = ['nome', 'telefone', 'rua', 'cidade', 'estado', 'cep'];
-  const dadosIncompletos = dadosPerfil !== null && camposObrigatorios.some(campo => !dadosPerfil[campo] || String(dadosPerfil[campo]).trim() === '');
-
-  const handleTamanhoChange = (produtoId, tamanho) => {
-    setTamanhosSelecionados((prev) => ({ ...prev, [produtoId]: tamanho }));
+  // Buscar utilizadores do Firestore
+  const carregarUsuarios = async () => {
+    try {
+      setCarregando(true);
+      const querySnapshot = await getDocs(collection(db, 'usuarios'));
+      const listaUsuarios = querySnapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      setUsuarios(listaUsuarios);
+    } catch (error) {
+      console.error("Erro ao carregar utilizadores:", error);
+      if (dispararToast) dispararToast('Erro ao carregar lista de utilizadores.', 'error');
+    } finally {
+      setCarregando(false);
+    }
   };
 
-  const ordenarTamanhos = (tamanhosArray) => {
-    if (!Array.isArray(tamanhosArray)) return [];
-    return [...tamanhosArray].sort((a, b) => {
-      const tamA = String(a.tamanho || a);
-      const tamB = String(b.tamanho || b);
+  useEffect(() => {
+    carregarUsuarios();
+  }, []);
 
-      if (tamA.toLowerCase() === 'único' || tamA.toLowerCase() === 'unico') return 1;
-      if (tamB.toLowerCase() === 'único' || tamB.toLowerCase() === 'unico') return -1;
+  // Função robusta para alterar permissão entre Admin e Cliente
+  const alternarPermissaoAdmin = async (userId, statusAtual) => {
+    try {
+      const novoStatus = !statusAtual;
+      const docRef = doc(db, 'usuarios', userId);
 
-      const numA = parseFloat(tamA);
-      const numB = parseFloat(tamB);
+      // Atualiza explicitamente ambos os campos para manter total consistência
+      await updateDoc(docRef, {
+        isAdmin: novoStatus,
+        role: novoStatus ? 'admin' : 'cliente'
+      });
 
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return numA - numB;
+      // Atualiza o estado local da lista
+      setUsuarios(usuarios.map(u => u.id === userId ? { ...u, isAdmin: novoStatus, role: novoStatus ? 'admin' : 'cliente' } : u));
+
+      // Atualiza também o utilizizador selecionado se for o mesmo
+      if (utilizadorSelecionado && utilizadorSelecionado.id === userId) {
+        setUtilizadorSelecionado({ ...utilizadorSelecionado, isAdmin: novoStatus, role: novoStatus ? 'admin' : 'cliente' });
       }
-      return tamA.localeCompare(tamB);
-    });
+
+      if (dispararToast) dispararToast(`Permissão alterada com sucesso para ${novoStatus ? 'Admin' : 'Cliente'}!`, 'success');
+    } catch (err) {
+      console.error("Erro ao alterar permissão:", err);
+      if (dispararToast) dispararToast('Erro ao alterar permissão do utilizador.', 'error');
+    }
   };
-
-  const obterListaTamanhos = (produto) => {
-    let listaBruta = [];
-
-    if (Array.isArray(produto.tamanhosEstoque) && produto.tamanhosEstoque.length > 0) {
-      listaBruta = produto.tamanhosEstoque;
-    } else {
-      const campoTamanhosObj = produto.tamanhos || produto.tamanho;
-
-      if (campoTamanhosObj && typeof campoTamanhosObj === 'object' && !Array.isArray(campoTamanhosObj)) {
-        const entradas = Object.entries(campoTamanhosObj);
-        if (entradas.length > 0) {
-          listaBruta = entradas.map(([tamanho, quantidade]) => ({
-            tamanho: String(tamanho).trim(),
-            quantidade: Number(quantidade) || 0
-          }));
-        }
-      } else if (Array.isArray(campoTamanhosObj) && campoTamanhosObj.length > 0) {
-        listaBruta = campoTamanhosObj.map(t => ({ tamanho: String(t).trim(), quantidade: 10 }));
-      } else if (typeof campoTamanhosObj === 'string' && campoTamanhosObj.trim() !== '') {
-        listaBruta = campoTamanhosObj.split(',').map(t => ({ tamanho: t.trim(), quantidade: 10 }));
-      } else {
-        listaBruta = [{ tamanho: 'Único', quantidade: 10 }];
-      }
-    }
-
-    return ordenarTamanhos(listaBruta);
-  };
-
-  const produtosFiltrados = produtos.filter((produto) => {
-    const correspondeNome = produto.nome.toLowerCase().includes(termoBusca.toLowerCase());
-    const listaTamanhosObj = obterListaTamanhos(produto);
-
-    if (tamanhoFiltro === 'todos') {
-      return correspondeNome;
-    }
-
-    const temTamanho = listaTamanhosObj.some(item => item.tamanho === tamanhoFiltro && item.quantidade > 0);
-    return correspondeNome && temTamanho;
-  });
-
-  const produtosOrdenados = [...produtosFiltrados].sort((a, b) => {
-    const precoA = Number(a.preco) || 0;
-    const precoB = Number(b.preco) || 0;
-
-    if (ordenacaoPreco === 'menor_preco') {
-      return precoA - precoB;
-    } else if (ordenacaoPreco === 'maior_preco') {
-      return precoB - precoA;
-    }
-    return 0;
-  });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Modal de Detalhes do Produto */}
-      <ModalDetalhesProduto
-        produto={produtoSelecionadoModal}
-        isOpen={Boolean(produtoSelecionadoModal)}
-        onClose={() => setProdutoSelecionadoModal(null)}
-        onAddToCart={onAddToCart}
-        ordenarTamanhos={ordenarTamanhos}
-      />
-
-      {/* AVISO DE CADASTRO INCOMPLETO NA PÁGINA PRINCIPAL */}
-      {dadosIncompletos && (
-        <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-4 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
-          <div>
-            <h3 className="font-bold text-amber-400 text-sm mb-1">⚠️ Atenção: Cadastro Incompleto</h3>
-            <p className="text-slate-300 text-xs">Existem informações essenciais em falta no seu perfil (como o Estado ou Morada). Complete os dados para evitar problemas nas entregas.</p>
-          </div>
-          <button
-            onClick={IrParaPerfil}
-            className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-md whitespace-nowrap cursor-pointer"
-          >
-            Completar Cadastro
-          </button>
-        </div>
-      )}
-
-      {/* Cabeçalho e Controlo de Filtros */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-sky-400">Catálogo de Sneakers</h1>
-          <p className="text-xs text-slate-400">Clique em qualquer modelo para ver os detalhes completos</p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="w-full sm:w-56">
-            <input
-              type="text"
-              value={termoBusca}
-              onChange={(e) => setTermoBusca(e.target.value)}
-              placeholder="🔍 Pesquisar por nome ou marca..."
-              className="w-full bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 shadow-inner"
-            />
-          </div>
-
-          <div className="w-full sm:w-auto">
-            <select
-              value={tamanhoFiltro}
-              onChange={(e) => setTamanhoFiltro(e.target.value)}
-              className="w-full sm:w-auto bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 cursor-pointer"
-            >
-              <option value="todos">Todos os Tamanhos</option>
-              {['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', 'Único'].map(t => (
-                <option key={t} value={t}>Tamanho {t}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-full sm:w-auto">
-            <select
-              value={ordenacaoPreco}
-              onChange={(e) => setOrdenacaoPreco(e.target.value)}
-              className="w-full sm:w-auto bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 cursor-pointer"
-            >
-              <option value="padrao">Ordenar por: Padrão</option>
-              <option value="menor_preco">Menor Preço</option>
-              <option value="maior_preco">Maior Preço</option>
-            </select>
-          </div>
-        </div>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-slate-100">Painel Administrativo</h1>
+        <button
+          onClick={carregarUsuarios}
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-sm transition"
+        >
+          Atualizar Lista
+        </button>
       </div>
 
-      {carregandoProdutos ? (
-        <div className="text-center py-12 text-xs text-slate-400 animate-pulse">A carregar sneakers...</div>
-      ) : produtosOrdenados.length === 0 ? (
-        <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-12 text-center my-12 text-xs">
-          <p className="text-2xl mb-2">🔍</p>
-          <p className="text-slate-300 font-semibold mb-1">Nenhum sneaker encontrado</p>
-          <p className="text-slate-500">Tente procurar por outro termo ou limpar os filtros selecionados.</p>
-        </div>
+      {carregando ? (
+        <p className="text-slate-400 text-center py-10">A carregar utilizadores...</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {produtosOrdenados.map((produto) => {
-            const listaTamanhosObj = obterListaTamanhos(produto);
-            const primeiroDisponivel = listaTamanhosObj.find(i => i.quantidade > 0)?.tamanho || listaTamanhosObj[0]?.tamanho || 'Único';
-            const tamanhoEscolhido = tamanhosSelecionados[produto.id] || primeiroDisponivel;
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {usuarios.map(user => {
+            const isAdm = user.isAdmin === true || user.role === 'admin';
             return (
-              <div key={produto.id} className="bg-[#131a27] border border-slate-800 rounded-xl overflow-hidden shadow-xl flex flex-col">
-                <div
-                  onClick={() => setProdutoSelecionadoModal(produto)}
-                  className="h-48 bg-slate-900 overflow-hidden flex items-center justify-center p-4 cursor-pointer group"
-                >
-                  <img
-                    src={produto.imagem || produto.imagemUrl || produto.url || produto.foto || produto.image || 'https://via.placeholder.com/300?text=Sem+Imagem'}
-                    alt={produto.nome}
-                    className="max-h-full object-contain group-hover:scale-105 transition duration-300"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = 'https://via.placeholder.com/300?text=Erro+Na+Imagem';
-                    }}
-                  />
-                </div>
-                <div className="p-4 flex flex-col flex-grow text-xs">
-                  <h3
-                    onClick={() => setProdutoSelecionadoModal(produto)}
-                    className="font-bold text-slate-200 text-sm mb-1 cursor-pointer hover:text-sky-400 transition truncate"
-                  >
-                    {produto.nome}
-                  </h3>
-                  <p className="text-sky-400 font-extrabold text-sm mb-4">
-                    R$ {Number(produto.preco).toFixed(2)}
-                  </p>
-
-                  <div className="mb-4 mt-auto">
-                    <label className="block text-slate-400 mb-1 font-semibold">Tamanho:</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {listaTamanhosObj.map((item) => {
-                        const esgotado = item.quantidade <= 0;
-                        return (
-                          <button
-                            key={item.tamanho}
-                            type="button"
-                            disabled={esgotado}
-                            onClick={() => handleTamanhoChange(produto.id, item.tamanho)}
-                            className={`px-2.5 py-1 rounded-md border font-bold transition cursor-pointer ${esgotado
-                              ? 'bg-slate-900/50 border-slate-800 text-slate-600 line-through cursor-not-allowed'
-                              : tamanhoEscolhido === item.tamanho
-                                ? 'bg-sky-600 border-sky-500 text-white'
-                                : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-600'
-                              }`}
-                          >
-                            {item.tamanho}
-                          </button>
-                        );
-                      })}
-                    </div>
+              <div key={user.id} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-4 shadow-sm">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-slate-100 text-base">{user.nome || 'Utilizador sem nome'}</h3>
+                    <p className="text-slate-400 text-sm">{user.email}</p>
                   </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${isAdm ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'bg-slate-800 text-slate-300'}`}>
+                    {isAdm ? 'Admin' : 'Cliente'}
+                  </span>
+                </div>
 
-                  <button
-                    onClick={() => onAddToCart(produto, tamanhoEscolhido)}
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-lg transition shadow-md cursor-pointer"
-                  >
-                    Adicionar ao Carrinho
-                  </button>
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-sm">
+                  <span className="text-slate-400">
+                    Carrinho Atual: <strong className="text-slate-200">
+                      {((user.carrinho || user.cart || user.itensCarrinho || []).reduce((acc, item) => acc + (item.qtd || item.quantidade || 1), 0))} itens
+                    </strong>
+                  </span>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setUtilizadorSelecionado(user)}
+                      className="text-sky-400 hover:underline text-xs font-medium"
+                    >
+                      Ver histórico e carrinho →
+                    </button>
+                    <button
+                      onClick={() => alternarPermissaoAdmin(user.id, isAdm)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium transition ${isAdm ? 'bg-amber-950/50 hover:bg-amber-900/50 text-amber-300 border border-amber-800/50' : 'bg-sky-600 hover:bg-sky-500 text-white'}`}
+                    >
+                      {isAdm ? 'Tornar Cliente' : 'Tornar Admin'}
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Caixa / Gaveta de Detalhes do Utilizador Selecionado */}
+      {utilizadorSelecionado && (
+        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl mt-6 relative shadow-lg">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-100">
+                Detalhes de: <span className="text-sky-400">{utilizadorSelecionado.nome || utilizadorSelecionado.email}</span>
+              </h3>
+              <p className="text-slate-500 text-xs">ID: {utilizadorSelecionado.id}</p>
+            </div>
+            <button
+              onClick={() => setUtilizadorSelecionado(null)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition"
+            >
+              ✕ Fechar
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* Bloco do Carrinho Atual */}
+            <div className="space-y-2">
+              <h5 className="font-bold text-slate-300 text-xs uppercase tracking-wider">🛒 Carrinho Atual (Não Finalizado):</h5>
+              {(() => {
+                const carrinhoDoUser = utilizadorSelecionado.carrinho || utilizadorSelecionado.cart || utilizadorSelecionado.itensCarrinho || [];
+
+                if (carrinhoDoUser.length === 0) {
+                  return <p className="text-slate-500 text-xs italic bg-slate-950/50 p-3 rounded-xl border border-slate-800/50">O carrinho deste utilizador está vazio de momento.</p>;
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {carrinhoDoUser.map((item, idx) => (
+                      <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-200 text-sm">{item.nome || item.produtoNome}</p>
+                          <p className="text-slate-400 text-xs">Tamanho: {item.tamanho || 'Único'} | Preço: R$ {item.preco}</p>
+                        </div>
+                        <span className="bg-sky-950 text-sky-400 border border-sky-800 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 ml-2">
+                          Qtd: {item.qtd || item.quantidade || 1}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Bloco do Histórico de Compras */}
+            <div className="space-y-2 pt-4 border-t border-slate-800">
+              <h5 className="font-bold text-slate-300 text-xs uppercase tracking-wider">📦 Histórico de Compras:</h5>
+              {(!utilizadorSelecionado.compras || utilizadorSelecionado.compras.length === 0) ? (
+                <p className="text-slate-500 text-xs italic bg-slate-950/50 p-3 rounded-xl border border-slate-800/50">Este utilizador ainda não realizou nenhuma compra.</p>
+              ) : (
+                <div className="space-y-2">
+                  {utilizadorSelecionado.compras.map((compra, idx) => (
+                    <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-slate-300">
+                      Pedido #{compra.id || idx} - Total: R$ {compra.total}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

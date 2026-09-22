@@ -1,38 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
-import { db } from '../firebase'; // Corrigido para o caminho correto do Firebase
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoExcluirProduto, dispararToast }) {
-  const [abaAtiva, setAbaAtiva] = useState('produtos'); // 'produtos' ou 'vendas'
+  const [abaAtiva, setAbaAtiva] = useState('produtos'); // 'produtos', 'vendas' ou 'usuarios'
 
+  // Estados de Cadastro
   const [nome, setNome] = useState('');
   const [preco, setPreco] = useState('');
   const [descricao, setDescricao] = useState('');
   const [imagemBase64, setImagemBase64] = useState('');
   const [nomeFicheiro, setNomeFicheiro] = useState('');
 
-  // Gestão profissional de tamanhos e stock
+  // Gestão de tamanhos e stock no cadastro
   const [tamanhoAtual, setTamanhoAtual] = useState('38');
   const [qtdAtual, setQtdAtual] = useState('1');
   const [listaTamanhos, setListaTamanhos] = useState([]);
 
-  // Estados para a secção de gestão/exclusão e seleções múltiplas
+  // Estados para gestão/exclusão e seleções múltiplas
   const [buscaProduto, setBuscaProduto] = useState('');
   const [produtoSelecionado, setProdutoSelecionado] = useState(null);
   const [tamanhosFormatados, setTamanhosFormatados] = useState([]);
   const [tamanhoParaGerir, setTamanhoParaGerir] = useState('');
   const [modoGestaoStock, setModoGestaoStock] = useState('remover_quantidade');
   const [qtdRemover, setQtdRemover] = useState(1);
-
-  // IDs dos produtos selecionados para exclusão em massa
   const [idsSelecionados, setIdsSelecionados] = useState([]);
 
   // Estados para Vendas / Encomendas
   const [encomendas, setEncomendas] = useState([]);
   const [carregandoEncomendas, setCarregandoEncomendas] = useState(false);
 
+  // Estados para Gestão de Utilizadores
+  const [usuarios, setUsuarios] = useState([]);
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
+  const [buscaUsuario, setBuscaUsuario] = useState('');
+  const [utilizadorSelecionado, setUtilizadorSelecionado] = useState(null);
+  const [historicoUtilizador, setHistoricoUtilizador] = useState([]);
+  const [carregandoDetalhesUser, setCarregandoDetalhesUser] = useState(false);
+
   useEffect(() => {
     carregarEncomendas();
+    carregarUsuarios();
   }, []);
 
   const carregarEncomendas = async () => {
@@ -50,6 +58,60 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
       console.error("Erro ao carregar encomendas:", err);
     } finally {
       setCarregandoEncomendas(false);
+    }
+  };
+
+  const carregarUsuarios = async () => {
+    setCarregandoUsuarios(true);
+    try {
+      // Ajuste o nome da coleção para 'usuarios' ou 'users' conforme a sua base de dados
+      const querySnapshot = await getDocs(collection(db, 'usuarios'));
+      const lista = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsuarios(lista);
+    } catch (err) {
+      console.error("Erro ao carregar utilizadores:", err);
+    } finally {
+      setCarregandoUsuarios(false);
+    }
+  };
+
+  const selecionarUtilizadorParaDetalhes = async (user) => {
+    setUtilizadorSelecionado(user);
+    setCarregandoDetalhesUser(true);
+    try {
+      // Buscar encomendas específicas deste utilizador
+      const q = query(collection(db, 'encomendas'), where('userId', '==', user.id));
+      const querySnapshot = await getDocs(q);
+      const historico = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setHistoricoUtilizador(historico);
+    } catch (err) {
+      console.error("Erro ao buscar histórico do utilizador:", err);
+    } finally {
+      setCarregandoDetalhesUser(false);
+    }
+  };
+
+  const alternarPermissaoAdmin = async (userId, statusAtual) => {
+    try {
+      const novoStatus = !statusAtual;
+      const docRef = doc(db, 'usuarios', userId);
+
+      // Atualiza explicitamente ambos os campos no Firestore
+      await updateDoc(docRef, {
+        isAdmin: novoStatus,
+        role: novoStatus ? 'admin' : 'cliente'
+      });
+
+      // Atualiza o estado local para refletir na interface na hora
+      setUsuarios(usuarios.map(u => u.id === userId ? { ...u, isAdmin: novoStatus, role: novoStatus ? 'admin' : 'cliente' } : u));
+      if (utilizadorSelecionado && utilizadorSelecionado.id === userId) {
+        setUtilizadorSelecionado({ ...utilizadorSelecionado, isAdmin: novoStatus, role: novoStatus ? 'admin' : 'cliente' });
+      }
+
+      if (dispararToast) dispararToast(`Permissão alterada com sucesso para ${novoStatus ? 'Admin' : 'Cliente'}!`, 'success');
+    } catch (err) {
+      console.error("Erro ao alterar permissão:", err);
+      if (dispararToast) dispararToast('Erro ao alterar permissão do utilizador.', 'error');
     }
   };
 
@@ -145,20 +207,8 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (!nome.trim()) {
-      dispararToast('Preencha o nome do sneaker.', 'error');
-      return;
-    }
-    if (!preco) {
-      dispararToast('Preencha o preço do sneaker.', 'error');
-      return;
-    }
-    if (!imagemBase64) {
-      dispararToast('Selecione uma imagem do dispositivo.', 'error');
-      return;
-    }
-    if (listaTamanhos.length === 0) {
-      dispararToast('Adicione pelo menos um tamanho e stock.', 'error');
+    if (!nome.trim() || !preco || !imagemBase64 || listaTamanhos.length === 0) {
+      dispararToast('Preencha todos os campos obrigatórios e adicione tamanhos/stock.', 'error');
       return;
     }
 
@@ -187,6 +237,11 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
     p.nome && p.nome.toLowerCase().includes(buscaProduto.toLowerCase())
   );
 
+  const usuariosFiltrados = usuarios.filter(u =>
+    (u.email && u.email.toLowerCase().includes(buscaUsuario.toLowerCase())) ||
+    (u.nome && u.nome.toLowerCase().includes(buscaUsuario.toLowerCase()))
+  );
+
   const extrairTamanhosDoProduto = (prod) => {
     if (!prod) return [];
     let extraidos = [];
@@ -196,15 +251,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
         tamanho: String(item.tamanho || item),
         quantidade: Number(item.quantidade || 1)
       }));
-    } else if (Array.isArray(prod.tamanhos) && prod.tamanhos.length > 0) {
-      extraidos = prod.tamanhos.map(item => {
-        if (typeof item === 'object' && item !== null) {
-          return { tamanho: String(item.tamanho || ''), quantidade: Number(item.quantidade || 1) };
-        }
-        return { tamanho: String(item), quantidade: 1 };
-      });
     }
-
     return ordenarTamanhos(extraidos);
   };
 
@@ -259,42 +306,53 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 text-xs space-y-8 text-slate-100">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+      {/* Cabeçalho e Abas */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#131a27] border border-slate-800 p-5 rounded-2xl shadow-xl">
         <div>
-          <h2 className="text-2xl font-bold text-sky-400">Painel Administrativo</h2>
-          <p className="text-slate-400">Registo, gestão de stock e controlo de vendas da loja</p>
+          <h2 className="text-2xl font-extrabold text-sky-400 tracking-tight">Painel Administrativo</h2>
+          <p className="text-slate-400 mt-0.5">Registo, gestão de stock, encomendas e utilizadores</p>
         </div>
 
-        {/* Abas de Navegação Admin */}
-        <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 gap-1">
+        <div className="flex bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1 w-full sm:w-auto">
           <button
             onClick={() => setAbaAtiva('produtos')}
-            className={`px-4 py-2 rounded-lg font-bold transition cursor-pointer ${abaAtiva === 'produtos' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'produtos' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
           >
-            📦 Gerenciar Produtos
+            📦 Produtos
           </button>
           <button
             onClick={() => {
               setAbaAtiva('vendas');
               carregarEncomendas();
             }}
-            className={`px-4 py-2 rounded-lg font-bold transition cursor-pointer ${abaAtiva === 'vendas' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'vendas' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
           >
-            🛒 Vendas e Encomendas ({encomendas.length})
+            🛒 Vendas ({encomendas.length})
+          </button>
+          <button
+            onClick={() => {
+              setAbaAtiva('usuarios');
+              carregarUsuarios();
+            }}
+            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'usuarios' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+          >
+            👥 Utilizadores ({usuarios.length})
           </button>
         </div>
       </div>
 
       {/* ABA DE PRODUTOS */}
       {abaAtiva === 'produtos' && (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {/* Formulário de Cadastro */}
-          <div className="bg-[#131a27] border border-slate-800 p-6 rounded-xl shadow-2xl">
-            <h3 className="text-sm font-bold text-slate-200 mb-4 pb-2 border-b border-slate-800">
-              Adicionar Novo Produto
-            </h3>
+          <div className="bg-[#131a27] border border-slate-800 p-6 rounded-2xl shadow-xl space-y-5">
+            <div className="border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-200">Adicionar Novo Produto</h3>
+              <p className="text-slate-400 text-[11px]">Preencha as informações do artigo e defina os tamanhos disponíveis.</p>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -305,20 +363,20 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
                     placeholder="Ex: Nike Air Max"
-                    className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition"
                   />
                 </div>
 
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Preço (R$)</label>
-                  <div className="flex items-center bg-[#0b101d] border border-slate-800 rounded-lg overflow-hidden focus-within:border-sky-500">
-                    <span className="pl-3 text-slate-400 font-semibold">R$</span>
+                  <div className="flex items-center bg-[#0b101d] border border-slate-800 rounded-xl overflow-hidden focus-within:border-sky-500 transition">
+                    <span className="pl-3.5 text-slate-400 font-semibold">R$</span>
                     <input
                       type="text"
                       value={preco}
                       onChange={handlePrecoChange}
                       placeholder="0,00"
-                      className="w-full bg-transparent p-2.5 text-slate-200 focus:outline-none"
+                      className="w-full bg-transparent p-3 text-slate-200 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -331,15 +389,15 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                   onChange={(e) => setDescricao(e.target.value)}
                   rows="2"
                   placeholder="Detalhes sobre o conforto, material e design..."
-                  className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Imagem do Dispositivo</label>
-                  <label className="flex items-center justify-center w-full bg-[#0b101d] border border-slate-800 hover:border-sky-500 rounded-lg p-2.5 text-slate-300 cursor-pointer transition shadow-inner">
-                    <span className="truncate">{nomeFicheiro ? nomeFicheiro : 'Procurar imagem...'}</span>
+                  <label className="flex items-center justify-center w-full bg-[#0b101d] border border-slate-800 hover:border-sky-500 rounded-xl p-3 text-slate-300 cursor-pointer transition shadow-inner">
+                    <span className="truncate">{nomeFicheiro ? nomeFicheiro : '📁 Procurar imagem...'}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -351,11 +409,11 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
 
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Gerir Tamanhos e Stock</label>
-                  <div className="flex space-x-2">
+                  <div className="flex gap-2">
                     <select
                       value={tamanhoAtual}
                       onChange={(e) => setTamanhoAtual(e.target.value)}
-                      className="bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                      className="bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 flex-1"
                     >
                       {['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', 'Único'].map((t) => (
                         <option key={t} value={t}>{t}</option>
@@ -368,13 +426,13 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                       value={qtdAtual}
                       onChange={(e) => setQtdAtual(e.target.value)}
                       placeholder="Qtd"
-                      className="w-20 bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                      className="w-20 bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 text-center"
                     />
 
                     <button
                       type="button"
                       onClick={handleAdicionarTamanho}
-                      className="bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white font-semibold px-4 py-2.5 rounded-lg transition border border-slate-700 cursor-pointer"
+                      className="bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white font-semibold px-4 py-3 rounded-xl transition border border-slate-700 cursor-pointer shrink-0"
                     >
                       Adicionar
                     </button>
@@ -383,17 +441,17 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
               </div>
 
               {listaTamanhos.length > 0 && (
-                <div className="bg-[#0b101d] border border-slate-800 p-3 rounded-lg">
-                  <span className="block font-semibold text-slate-400 mb-2">Tamanhos e Stock Configurados:</span>
+                <div className="bg-[#0b101d] border border-slate-800 p-3.5 rounded-xl space-y-2">
+                  <span className="block font-semibold text-slate-400">Tamanhos e Stock Configurados:</span>
                   <div className="flex flex-wrap gap-2">
                     {listaTamanhos.map((item) => (
-                      <div key={item.tamanho} className="flex items-center bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 space-x-2">
+                      <div key={item.tamanho} className="flex items-center bg-slate-800/80 border border-slate-700/80 rounded-lg px-3 py-1.5 space-x-2 shadow-sm">
                         <span className="text-slate-200 font-bold">Tam: {item.tamanho}</span>
                         <span className="text-sky-400">({item.quantidade} un.)</span>
                         <button
                           type="button"
                           onClick={() => handleRemoverTamanhoLista(item.tamanho)}
-                          className="text-red-400 hover:text-red-300 font-bold ml-1 cursor-pointer"
+                          className="text-red-400 hover:text-red-300 font-bold ml-1 cursor-pointer px-1"
                         >
                           ×
                         </button>
@@ -403,17 +461,10 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 </div>
               )}
 
-              {imagemBase64 && (
-                <div className="flex items-center space-x-3 bg-[#0b101d] p-3 rounded-lg border border-slate-800 w-fit">
-                  <img src={imagemBase64} alt="Pré-visualização" className="w-12 h-12 object-cover rounded-md border border-slate-700" />
-                  <span className="text-slate-300">Imagem pronta para envio.</span>
-                </div>
-              )}
-
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-6 py-2.5 rounded-lg transition shadow-md cursor-pointer"
+                  className="w-full sm:w-auto bg-sky-600 hover:bg-sky-500 text-white font-bold px-6 py-3 rounded-xl transition shadow-lg cursor-pointer"
                 >
                   Cadastrar Produto
                 </button>
@@ -421,15 +472,16 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
             </form>
           </div>
 
-          {/* Secção de Gestão / Exclusão */}
-          <div className="bg-[#131a27] border border-slate-800 p-6 rounded-xl shadow-2xl space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-3 gap-2">
-              <h3 className="text-sm font-bold text-slate-200">
-                Gerir / Excluir Produtos do Estoque ({produtos.length})
-              </h3>
+          {/* Secção de Gestão / Exclusão de Produtos */}
+          <div className="bg-[#131a27] border border-slate-800 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-3 gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-200">Gerir / Excluir Produtos do Estoque</h3>
+                <p className="text-slate-400 text-[11px]">Total cadastrado: {produtos.length} produtos</p>
+              </div>
 
               {produtosFiltrados.length > 0 && (
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={handleToggleSelecionarTodos}
@@ -442,7 +494,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     <button
                       type="button"
                       onClick={handleExcluirSelecionados}
-                      className="bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-lg transition shadow-md cursor-pointer"
+                      className="bg-red-600 hover:bg-red-500 text-white font-bold px-3.5 py-2 rounded-xl transition shadow-md cursor-pointer"
                     >
                       Excluir Selecionados ({idsSelecionados.length})
                     </button>
@@ -457,14 +509,14 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 value={buscaProduto}
                 onChange={(e) => setBuscaProduto(e.target.value)}
                 placeholder="🔍 Pesquisar produto por nome..."
-                className="w-full bg-[#0b101d] border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition"
               />
             </div>
 
             {produtos.length === 0 ? (
-              <p className="text-slate-500 text-center py-6">Nenhum produto cadastrado no momento.</p>
+              <p className="text-slate-500 text-center py-8">Nenhum produto cadastrado no momento.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
                 {produtosFiltrados.map((produto) => {
                   const isSelecionadoParaGestao = produtoSelecionado?.id === produto.id;
                   const isMarcado = idsSelecionados.includes(produto.id);
@@ -473,7 +525,8 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     <div
                       key={produto.id}
                       onClick={() => selecionarProdutoParaGestao(produto)}
-                      className={`flex items-center justify-between bg-[#0b101d] border p-3 rounded-lg cursor-pointer transition ${isSelecionadoParaGestao ? 'border-sky-500 bg-sky-950/20' : 'border-slate-800 hover:border-slate-700'}`}
+                      className={`flex items-center justify-between bg-[#0b101d] border p-3.5 rounded-xl cursor-pointer transition ${isSelecionadoParaGestao ? 'border-sky-500 bg-sky-950/20 shadow' : 'border-slate-800 hover:border-slate-700'
+                        }`}
                     >
                       <div className="flex items-center space-x-3 truncate">
                         <input
@@ -482,19 +535,19 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                           onChange={(e) => handleToggleCheckboxProduto(e, produto.id)}
                           className="w-4 h-4 rounded border-slate-700 text-sky-600 focus:ring-sky-500 bg-slate-900 cursor-pointer shrink-0"
                         />
-
                         <img
-                          src={produto.imagem || produto.imagemUrl || 'https://via.placeholder.com/50'}
+                          src={produto.imagem || 'https://via.placeholder.com/50'}
                           alt={produto.nome}
-                          className="w-10 h-10 object-contain bg-slate-900 rounded border border-slate-800 shrink-0"
+                          className="w-10 h-10 object-contain bg-slate-900 rounded-lg border border-slate-800 shrink-0 p-0.5"
                         />
                         <div className="truncate">
                           <p className="font-bold text-slate-200 truncate">{produto.nome}</p>
-                          <p className="text-sky-400">R$ {Number(produto.preco || 0).toFixed(2)}</p>
+                          <p className="text-sky-400 font-medium">R$ {Number(produto.preco || 0).toFixed(2)}</p>
                         </div>
                       </div>
 
-                      <span className={`text-[11px] font-semibold px-2 py-1 rounded shrink-0 ml-2 ${isSelecionadoParaGestao ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg shrink-0 ml-2 ${isSelecionadoParaGestao ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'
+                        }`}>
                         {isSelecionadoParaGestao ? 'A gerir' : 'Selecionar'}
                       </span>
                     </div>
@@ -502,134 +555,18 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 })}
               </div>
             )}
-
-            {produtoSelecionado && (
-              <div className="bg-[#0b101d] border border-sky-500/40 p-4 rounded-xl space-y-4 mt-4">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                  <span className="font-bold text-slate-200">Gerindo Unidade: <span className="text-sky-400">{produtoSelecionado.nome}</span></span>
-                  <button
-                    type="button"
-                    onClick={() => setProdutoSelecionado(null)}
-                    className="text-slate-400 hover:text-slate-200 font-bold cursor-pointer"
-                  >
-                    ✕ Fechar
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block mb-1 text-slate-400 font-semibold">Ação Desejada</label>
-                    <select
-                      value={modoGestaoStock}
-                      onChange={(e) => setModoGestaoStock(e.target.value)}
-                      className="w-full bg-[#131a27] border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-sky-500"
-                    >
-                      <option value="remover_quantidade">Remover Quantidade (Parcial)</option>
-                      <option value="remover_tamanho">Remover Tamanho Inteiro</option>
-                      <option value="apagar_tudo">Excluir Produto Completo</option>
-                    </select>
-                  </div>
-
-                  {modoGestaoStock !== 'apagar_tudo' && (
-                    <>
-                      <div>
-                        <label className="block mb-1 text-slate-400 font-semibold">Tamanho Disponível</label>
-                        <select
-                          value={tamanhoParaGerir}
-                          onChange={(e) => {
-                            setTamanhoParaGerir(e.target.value);
-                            setQtdRemover(1);
-                          }}
-                          className="w-full bg-[#131a27] border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-sky-500"
-                        >
-                          {tamanhosFormatados.length === 0 ? (
-                            <option value="">Sem tamanhos registados</option>
-                          ) : (
-                            tamanhosFormatados.map((item) => (
-                              <option key={item.tamanho} value={item.tamanho}>
-                                Tam: {item.tamanho} ({item.quantidade} un.)
-                              </option>
-                            ))
-                          )}
-                        </select>
-                      </div>
-
-                      {modoGestaoStock === 'remover_quantidade' && (
-                        <div>
-                          <label className="block mb-1 text-slate-400 font-semibold">
-                            Quantidade a Remover (Máx: {stockAtualDoTamanhoSelecionado()})
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max={stockAtualDoTamanhoSelecionado()}
-                            value={qtdRemover}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10);
-                              const maxStock = stockAtualDoTamanhoSelecionado();
-                              if (isNaN(val)) {
-                                setQtdRemover('');
-                              } else if (val > maxStock) {
-                                setQtdRemover(maxStock);
-                              } else if (val < 1) {
-                                setQtdRemover(1);
-                              } else {
-                                setQtdRemover(val);
-                              }
-                            }}
-                            className="w-full bg-[#131a27] border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-sky-500"
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (modoGestaoStock === 'apagar_tudo') {
-                        if (window.confirm(`Tem certeza que deseja excluir completamente "${produtoSelecionado.nome}"?`)) {
-                          aoExcluirProduto(produtoSelecionado.id);
-                          setProdutoSelecionado(null);
-                        }
-                      } else {
-                        if (!tamanhoParaGerir) {
-                          dispararToast('Selecione um tamanho válido.', 'error');
-                          return;
-                        }
-                        const maxStock = stockAtualDoTamanhoSelecionado();
-                        if (Number(qtdRemover) > maxStock) {
-                          dispararToast(`A quantidade não pode exceder o stock disponível (${maxStock} un.).`, 'error');
-                          return;
-                        }
-                        dispararToast(`Ação aplicada no tamanho ${tamanhoParaGerir} com sucesso!`, 'success');
-                        setProdutoSelecionado(null);
-                      }
-                    }}
-                    className={`font-bold px-5 py-2 rounded-lg transition shadow-md cursor-pointer ${modoGestaoStock === 'apagar_tudo'
-                      ? 'bg-red-600 hover:bg-red-500 text-white'
-                      : 'bg-sky-600 hover:bg-sky-500 text-white'
-                      }`}
-                  >
-                    {modoGestaoStock === 'apagar_tudo' ? 'Confirmar Exclusão Total' : 'Aplicar Alteração de Stock'}
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
 
-      {/* ABA DE VENDAS E ENCOMENDAS */}
+      {/* ABA DE VENDAS */}
       {abaAtiva === 'vendas' && (
         <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <div className="flex justify-between items-center mb-2">
+          <div className="flex justify-between items-center mb-2 pb-3 border-b border-slate-800">
             <h3 className="text-sm font-bold text-sky-400">🛒 Gestão de Encomendas dos Clientes</h3>
             <button
               onClick={carregarEncomendas}
-              className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl font-bold transition cursor-pointer"
+              className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 px-3.5 py-2 rounded-xl font-bold transition cursor-pointer"
             >
               🔄 Atualizar Lista
             </button>
@@ -654,7 +591,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-sky-400">ID: {enc.id.slice(0, 8)}...</span>
-                        <span className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-bold">
+                        <span className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-lg text-[10px] font-bold">
                           {enc.status || 'Aprovado / Pago'}
                         </span>
                       </div>
@@ -682,23 +619,165 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={enc.status || 'Aprovado / Pago'}
-                          onChange={(e) => atualizarStatusEncomenda(enc.id, e.target.value)}
-                          className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-sky-500 cursor-pointer"
-                        >
-                          <option value="Aprovado / Pago">Aprovado / Pago</option>
-                          <option value="Em Separação">Em Separação</option>
-                          <option value="Enviado / Em Trânsito">Enviado / Em Trânsito</option>
-                          <option value="Entregue">Entregue</option>
-                          <option value="Cancelado">Cancelado</option>
-                        </select>
-                      </div>
+                      <select
+                        value={enc.status || 'Aprovado / Pago'}
+                        onChange={(e) => atualizarStatusEncomenda(enc.id, e.target.value)}
+                        className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-sky-500 cursor-pointer"
+                      >
+                        <option value="Aprovado / Pago">Aprovado / Pago</option>
+                        <option value="Em Separação">Em Separação</option>
+                        <option value="Enviado / Em Trânsito">Enviado / Em Trânsito</option>
+                        <option value="Entregue">Entregue</option>
+                        <option value="Cancelado">Cancelado</option>
+                      </select>
                     </div>
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ABA DE UTILIZADORES (NOVA) */}
+      {abaAtiva === 'usuarios' && (
+        <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-3 gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-sky-400">👥 Gestão Completa de Utilizadores</h3>
+              <p className="text-slate-400 text-[11px]">Veja os dados, carrinho pendente, histórico de compras e altere permissões.</p>
+            </div>
+            <button
+              onClick={carregarUsuarios}
+              className="bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 px-3.5 py-2 rounded-xl font-bold transition cursor-pointer"
+            >
+              🔄 Atualizar Lista
+            </button>
+          </div>
+
+          <div>
+            <input
+              type="text"
+              value={buscaUsuario}
+              onChange={(e) => setBuscaUsuario(e.target.value)}
+              placeholder="🔍 Pesquisar utilizador por nome ou e-mail..."
+              className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition"
+            />
+          </div>
+
+          {carregandoUsuarios ? (
+            <p className="text-slate-400 py-12 text-center animate-pulse">A carregar utilizadores...</p>
+          ) : usuarios.length === 0 ? (
+            <div className="text-center py-16 text-slate-500">
+              <p className="text-3xl mb-2">👤</p>
+              <p>Nenhum utilizador encontrado na coleção "usuarios".</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
+              {usuariosFiltrados.map((user) => {
+                const isSelected = utilizadorSelecionado?.id === user.id;
+
+                return (
+                  <div
+                    key={user.id}
+                    onClick={() => selecionarUtilizadorParaDetalhes(user)}
+                    className={`bg-[#0b101d] border p-4 rounded-xl cursor-pointer transition space-y-3 ${isSelected ? 'border-sky-500 bg-sky-950/20 shadow-lg' : 'border-slate-800 hover:border-slate-700'
+                      }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-bold text-slate-200 text-sm">{user.nome || 'Utilizador sem nome'}</p>
+                        <p className="text-slate-400 text-xs">{user.email || user.id}</p>
+                      </div>
+
+                      {/* O MAIS IMPORTANTE: Alterar entre Cliente e Admin */}
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${user.isAdmin ? 'bg-purple-950/60 border border-purple-500/30 text-purple-400' : 'bg-slate-800 text-slate-400'
+                          }`}>
+                          {user.isAdmin ? 'Admin' : 'Cliente'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => alternarPermissaoAdmin(user.id, user.isAdmin)}
+                          className="bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white text-[10px] font-bold px-2.5 py-1 rounded-lg transition border border-slate-700 cursor-pointer"
+                        >
+                          {user.isAdmin ? 'Tornar Cliente' : 'Tornar Admin'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-slate-900">
+                      <span>Carrinho Atual: <strong className="text-sky-400">{user.carrinho?.length || 0} itens</strong></span>
+                      <span className="text-sky-400 underline">{isSelected ? 'A visualizar detalhes' : 'Ver histórico e carrinho →'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Painel de Detalhes do Utilizador Selecionado */}
+          {utilizadorSelecionado && (
+            <div className="bg-[#0b101d] border border-sky-500/50 p-5 rounded-2xl space-y-4 mt-4 shadow-xl">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="font-bold text-slate-200 text-sm">Detalhes de: <span className="text-sky-400">{utilizadorSelecionado.email}</span></h4>
+                  <p className="text-slate-400 text-[11px]">ID: {utilizadorSelecionado.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUtilizadorSelecionado(null)}
+                  className="text-slate-400 hover:text-slate-200 font-bold cursor-pointer text-xs px-2 py-1 bg-slate-900 rounded-lg"
+                >
+                  ✕ Fechar
+                </button>
+              </div>
+
+              {/* O que ele adicionou no carrinho mas não finalizou */}
+              <div className="space-y-2">
+                <h5 className="font-bold text-slate-300 text-xs">🛒 Carrinho Atual (Não Finalizado):</h5>
+                {(() => {
+                  // Verifica diferentes nomes possíveis para o campo do carrinho no Firestore
+                  const carrinhoDoUser = utilizadorSelecionado.carrinho || utilizadorSelecionado.cart || utilizadorSelecionado.itensCarrinho || [];
+
+                  if (carrinhoDoUser.length === 0) {
+                    return <p className="text-slate-500 text-xs italic">O carrinho deste utilizador está vazio de momento.</p>;
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {carrinhoDoUser.map((item, idx) => (
+                        <div key={idx} className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between">
+                          <span className="font-bold text-slate-200 truncate">{item.nome || item.produtoNome} (Tam: {item.tamanho || 'Único'})</span>
+                          <span className="text-sky-400 shrink-0 ml-2">Qtd: {item.qtd || item.quantidade || 1}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Histórico de Compras */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <h5 className="font-bold text-slate-300 text-xs">📦 Histórico de Compras:</h5>
+                {carregandoDetalhesUser ? (
+                  <p className="text-slate-500 text-xs animate-pulse">A carregar compras do utilizador...</p>
+                ) : historicoUtilizador.length === 0 ? (
+                  <p className="text-slate-500 text-xs italic">Este utilizador ainda não realizou nenhuma compra.</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {historicoUtilizador.map((compra) => (
+                      <div key={compra.id} className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-sky-400">Pedido #{compra.id.slice(0, 8)}</p>
+                          <p className="text-slate-400 text-[10px]">Status: <span className="text-emerald-400 font-bold">{compra.status || 'Pago'}</span></p>
+                        </div>
+                        <span className="font-extrabold text-slate-200">R$ {Number(compra.total || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

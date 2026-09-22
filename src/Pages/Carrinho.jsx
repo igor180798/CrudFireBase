@@ -1,11 +1,42 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../services/firebaseConfig'; // Ajuste o caminho conforme o seu projeto
 
-export default function Carrinho({ carrinho, setCarrinho, dispararToast }) {
-  const removerItem = (index) => {
+export default function Carrinho({ carrinho, setCarrinho, dispararToast, currentUser }) {
+
+  // Função auxiliar para atualizar o Firestore
+  const sincronizarCarrinhoNoFirestore = async (novoCarrinho) => {
+    if (currentUser && currentUser.uid) {
+      try {
+        const userRef = doc(db, 'usuarios', currentUser.uid);
+        await updateDoc(userRef, {
+          carrinho: novoCarrinho
+        });
+      } catch (error) {
+        console.error("Erro ao sincronizar carrinho no Firestore:", error);
+      }
+    }
+  };
+
+  const removerItem = async (index) => {
     const novoCarrinho = carrinho.filter((_, i) => i !== index);
     setCarrinho(novoCarrinho);
+
+    // Atualiza no Firebase do utilizador logado
+    await sincronizarCarrinhoNoFirestore(novoCarrinho);
+
     dispararToast('Item removido do carrinho.', 'info');
+  };
+
+  const finalizarCompra = async () => {
+    dispararToast('Compra finalizada com sucesso! Obrigado.');
+    setCarrinho([]);
+
+    // Limpa o carrinho também no Firebase do utilizador logado
+    await sincronizarCarrinhoNoFirestore([]);
+
+    // Opcional: Se também quiser salvar no histórico de compras do utilizador no Firestore, podemos adicionar aqui depois.
   };
 
   const valorTotal = carrinho.reduce((acc, item) => acc + item.preco * item.qtd, 0);
@@ -57,10 +88,7 @@ export default function Carrinho({ carrinho, setCarrinho, dispararToast }) {
               <h2 className="text-xl font-extrabold text-emerald-400">R$ {valorTotal.toFixed(2)}</h2>
             </div>
             <button
-              onClick={() => {
-                dispararToast('Compra finalizada com sucesso! Obrigado.');
-                setCarrinho([]);
-              }}
+              onClick={finalizarCompra}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition"
             >
               Finalizar Compra

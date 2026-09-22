@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, collection, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import Home from './Pages/Home';
 import Login from './Pages/Login';
 import PainelAdmin from './Pages/PainelAdmin';
@@ -29,20 +29,24 @@ export default function App() {
     setToast({ mensagem, tipo });
   };
 
+  // Função auxiliar para sincronizar o carrinho no Firestore do utilizador atual
+  const sincronizarCarrinhoNoFirestore = async (novoCarrinho, userId) => {
+    if (!userId) return;
+    try {
+      const userRef = doc(db, 'usuarios', userId);
+      await updateDoc(userRef, {
+        carrinho: novoCarrinho
+      });
+    } catch (err) {
+      console.error("Erro ao sincronizar carrinho no Firestore:", err);
+    }
+  };
+
   // Monitorizar Sessão, carregar carrinho, dados do perfil e verificar papel (role)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        const carrinhoSalvo = localStorage.getItem(`sneakerstore_carrinho_${currentUser.uid}`);
-        if (carrinhoSalvo) {
-          try {
-            setCarrinho(JSON.parse(carrinhoSalvo));
-          } catch (e) {
-            console.error("Erro ao carregar carrinho:", e);
-          }
-        }
-
         // CARREGAR DADOS DO PERFIL E VERIFICAR PAPEL (ADMIN OU CLIENTE) NO FIRESTORE
         try {
           const docRef = doc(db, 'usuarios', currentUser.uid);
@@ -50,6 +54,23 @@ export default function App() {
 
           if (docSnap.exists()) {
             const data = docSnap.data();
+
+            // Carregar carrinho diretamente do documento do utilizador no Firestore
+            if (data.carrinho && Array.isArray(data.carrinho)) {
+              setCarrinho(data.carrinho);
+            } else {
+              // Fallback para localStorage se não existir no Firestore ainda
+              const carrinhoSalvo = localStorage.getItem(`sneakerstore_carrinho_${currentUser.uid}`);
+              if (carrinhoSalvo) {
+                try {
+                  const parsed = JSON.parse(carrinhoSalvo);
+                  setCarrinho(parsed);
+                  sincronizarCarrinhoNoFirestore(parsed, currentUser.uid);
+                } catch (e) {
+                  console.error("Erro ao carregar carrinho:", e);
+                }
+              }
+            }
 
             // Normaliza os dados para o App/Home lerem perfeitamente
             setDadosPerfil({
@@ -87,13 +108,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Guardar carrinho no localStorage sempre que houver alterações
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(carrinho));
-    }
-  }, [carrinho, user]);
-
   // Carregar Produtos do Firestore
   useEffect(() => {
     async function carregarProdutos() {
@@ -124,13 +138,20 @@ export default function App() {
   const handleAddToCart = (produto, tamanho) => {
     setCarrinho(prev => {
       const indexExistente = prev.findIndex(item => item.id === produto.id && item.tamanho === tamanho);
+      let novoCarrinho;
       if (indexExistente >= 0) {
-        const novoCarrinho = [...prev];
+        novoCarrinho = [...prev];
         novoCarrinho[indexExistente].qtd += 1;
-        return novoCarrinho;
       } else {
-        return [...prev, { ...produto, tamanho, qtd: 1 }];
+        novoCarrinho = [...prev, { ...produto, tamanho, qtd: 1 }];
       }
+
+      // Sincroniza com o Firestore
+      if (user) {
+        sincronizarCarrinhoNoFirestore(novoCarrinho, user.uid);
+        localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(novoCarrinho));
+      }
+      return novoCarrinho;
     });
     dispararToast(`${produto.nome} (${tamanho}) adicionado ao carrinho!`, 'success');
   };
@@ -145,12 +166,27 @@ export default function App() {
       } else {
         novoCarrinho[index].qtd = novaQtd;
       }
+
+      // Sincroniza com o Firestore
+      if (user) {
+        sincronizarCarrinhoNoFirestore(novoCarrinho, user.uid);
+        localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(novoCarrinho));
+      }
       return novoCarrinho;
     });
   };
 
   const handleRemoveItem = (indexParaRemover) => {
-    setCarrinho(prev => prev.filter((_, index) => index !== indexParaRemover));
+    setCarrinho(prev => {
+      const novoCarrinho = prev.filter((_, index) => index !== indexParaRemover);
+
+      // Sincroniza com o Firestore
+      if (user) {
+        sincronizarCarrinhoNoFirestore(novoCarrinho, user.uid);
+        localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(novoCarrinho));
+      }
+      return novoCarrinho;
+    });
     dispararToast('Item removido do carrinho.', 'info');
   };
 
@@ -178,8 +214,11 @@ export default function App() {
       await addDoc(collection(db, 'encomendas'), novaEncomenda);
 
       dispararToast('Pedido finalizado com sucesso! Encomenda registada.', 'success');
+
+      // Limpa o carrinho local e no Firestore
       setCarrinho([]);
       if (user) {
+        await sincronizarCarrinhoNoFirestore([], user.uid);
         localStorage.removeItem(`sneakerstore_carrinho_${user.uid}`);
       }
       setIsCartOpen(false);
