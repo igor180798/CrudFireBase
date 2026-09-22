@@ -106,6 +106,7 @@ export default function Login({ dispararToast }) {
           cpf,
           dataNascimento,
           telefone,
+          role: 'cliente',
           email: emailAuth,
           endereco: {
             cep,

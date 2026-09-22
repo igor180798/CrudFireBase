@@ -29,7 +29,7 @@ export default function App() {
     setToast({ mensagem, tipo });
   };
 
-  // Monitorizar Sessão, carregar carrinho e dados do perfil
+  // Monitorizar Sessão, carregar carrinho, dados do perfil e verificar papel (role)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -43,13 +43,14 @@ export default function App() {
           }
         }
 
-        // CARREGAR DADOS DO PERFIL NO FIRESTORE
-        // CARREGAR DADOS DO PERFIL NO FIRESTORE
+        // CARREGAR DADOS DO PERFIL E VERIFICAR PAPEL (ADMIN OU CLIENTE) NO FIRESTORE
         try {
           const docRef = doc(db, 'usuarios', currentUser.uid);
           const docSnap = await getDoc(docRef);
+
           if (docSnap.exists()) {
             const data = docSnap.data();
+
             // Normaliza os dados para o App/Home lerem perfeitamente
             setDadosPerfil({
               nome: data.nomeCompleto || data.nome || '',
@@ -61,31 +62,22 @@ export default function App() {
               estado: data.endereco?.estado || data.estado || '',
               cep: data.endereco?.cep || data.cep || ''
             });
+
+            // Definição profissional do papel: Se for o e-mail master ou tiver role === 'admin'
+            const ehAdminMaster = currentUser.email === 'igortosquibenatti@gmail.com';
+            const temRoleAdmin = data.role === 'admin' || data.admin === true;
+            setIsAdmin(ehAdminMaster || temRoleAdmin);
+
           } else {
             setDadosPerfil({ nome: '', telefone: '', rua: '', bairro: '', numero: '', cidade: '', estado: '', cep: '' });
+            setIsAdmin(currentUser.email === 'igortosquibenatti@gmail.com');
           }
         } catch (err) {
-          console.error("Erro ao carregar perfil:", err);
+          console.error("Erro ao carregar perfil/permissões:", err);
           setDadosPerfil(null);
+          setIsAdmin(currentUser.email === 'igortosquibenatti@gmail.com');
         }
 
-        // Verificar permissão de Administrador
-        if (currentUser.email === 'igortosquibenatti@gmail.com') {
-          setIsAdmin(true);
-        } else {
-          try {
-            const docRef = doc(db, 'usuarios', currentUser.uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              setIsAdmin(docSnap.data().admin === true);
-            } else {
-              setIsAdmin(false);
-            }
-          } catch (err) {
-            console.error("Erro ao verificar admin:", err);
-            setIsAdmin(false);
-          }
-        }
       } else {
         setIsAdmin(false);
         setCarrinho([]);
