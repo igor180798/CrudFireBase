@@ -16,6 +16,9 @@ export default function App() {
   const [produtos, setProdutos] = useState([]);
   const [carregandoProdutos, setCarregandoProdutos] = useState(true);
 
+  // Perfil do Utilizador para validação de cadastro incompleto
+  const [dadosPerfil, setDadosPerfil] = useState(null);
+
   // Carrinho e Drawer
   const [carrinho, setCarrinho] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -26,7 +29,7 @@ export default function App() {
     setToast({ mensagem, tipo });
   };
 
-  // Monitorizar Sessão e carregar carrinho guardado do utilizador
+  // Monitorizar Sessão, carregar carrinho e dados do perfil
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -40,6 +43,33 @@ export default function App() {
           }
         }
 
+        // CARREGAR DADOS DO PERFIL NO FIRESTORE
+        // CARREGAR DADOS DO PERFIL NO FIRESTORE
+        try {
+          const docRef = doc(db, 'usuarios', currentUser.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Normaliza os dados para o App/Home lerem perfeitamente
+            setDadosPerfil({
+              nome: data.nomeCompleto || data.nome || '',
+              telefone: data.telefone || '',
+              rua: data.endereco?.rua || data.rua || '',
+              bairro: data.endereco?.bairro || data.bairro || '',
+              numero: data.endereco?.numero || data.numero || '',
+              cidade: data.endereco?.cidade || data.cidade || '',
+              estado: data.endereco?.estado || data.estado || '',
+              cep: data.endereco?.cep || data.cep || ''
+            });
+          } else {
+            setDadosPerfil({ nome: '', telefone: '', rua: '', bairro: '', numero: '', cidade: '', estado: '', cep: '' });
+          }
+        } catch (err) {
+          console.error("Erro ao carregar perfil:", err);
+          setDadosPerfil(null);
+        }
+
+        // Verificar permissão de Administrador
         if (currentUser.email === 'igortosquibenatti@gmail.com') {
           setIsAdmin(true);
         } else {
@@ -59,6 +89,7 @@ export default function App() {
       } else {
         setIsAdmin(false);
         setCarrinho([]);
+        setDadosPerfil(null);
       }
     });
     return () => unsubscribe();
@@ -98,7 +129,6 @@ export default function App() {
     }
   };
 
-  // Adicionar ao carrinho
   const handleAddToCart = (produto, tamanho) => {
     setCarrinho(prev => {
       const indexExistente = prev.findIndex(item => item.id === produto.id && item.tamanho === tamanho);
@@ -132,20 +162,11 @@ export default function App() {
     dispararToast('Item removido do carrinho.', 'info');
   };
 
-  // Finalizar Compra (Checkout): Grava a encomenda no Firestore e limpa o carrinho
   const handleCheckout = async () => {
-    console.log("=== INICIO DO CHECKOUT ===");
-    console.log("Utilizador logado:", user?.uid, user?.email);
-    console.log("Itens no carrinho:", carrinho);
-
-    if (carrinho.length === 0) {
-      console.log("Carrinho vazio, abortando checkout.");
-      return;
-    }
+    if (carrinho.length === 0) return;
 
     try {
       const totalPedido = carrinho.reduce((acc, item) => acc + (Number(item.preco) * Number(item.qtd)), 0);
-      console.log("Total calculado do pedido:", totalPedido);
 
       const novaEncomenda = {
         userId: user.uid,
@@ -162,9 +183,7 @@ export default function App() {
         criadoEm: new Date()
       };
 
-      console.log("Tentando gravar encomenda no Firestore:", novaEncomenda);
-      const docRef = await addDoc(collection(db, 'encomendas'), novaEncomenda);
-      console.log("SUCESSO! Encomenda gravada com ID:", docRef.id);
+      await addDoc(collection(db, 'encomendas'), novaEncomenda);
 
       dispararToast('Pedido finalizado com sucesso! Encomenda registada.', 'success');
       setCarrinho([]);
@@ -174,7 +193,7 @@ export default function App() {
       setIsCartOpen(false);
       setPaginaAtual('perfil');
     } catch (err) {
-      console.error("ERRO COMPLETO AO FINALIZAR PEDIDO:", err);
+      console.error("ERRO AO FINALIZAR PEDIDO:", err);
       dispararToast(`Erro: ${err.message || 'Erro ao processar encomenda.'}`, 'error');
     }
   };
@@ -238,14 +257,14 @@ export default function App() {
             <nav className="flex space-x-4">
               <button
                 onClick={() => setPaginaAtual('home')}
-                className={`transition ${paginaAtual === 'home' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
+                className={`transition cursor-pointer ${paginaAtual === 'home' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
               >
                 Catálogo
               </button>
 
               <button
                 onClick={() => setPaginaAtual('perfil')}
-                className={`transition ${paginaAtual === 'perfil' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
+                className={`transition cursor-pointer ${paginaAtual === 'perfil' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
               >
                 Meu Perfil
               </button>
@@ -253,7 +272,7 @@ export default function App() {
               {isAdmin && (
                 <button
                   onClick={() => setPaginaAtual('admin')}
-                  className={`transition ${paginaAtual === 'admin' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
+                  className={`transition cursor-pointer ${paginaAtual === 'admin' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
                 >
                   Painel Admin
                 </button>
@@ -266,7 +285,7 @@ export default function App() {
 
             <button
               onClick={() => setIsCartOpen(true)}
-              className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg transition shadow-md flex items-center space-x-1.5"
+              className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
             >
               <span>🛒 Carrinho</span>
               <span className="bg-sky-800 px-1.5 py-0.5 rounded-md text-[10px]">{totalItensCarrinho}</span>
@@ -274,7 +293,7 @@ export default function App() {
 
             <button
               onClick={handleLogout}
-              className="bg-slate-800 hover:bg-red-600/20 hover:text-red-400 text-slate-300 font-semibold px-3 py-1.5 rounded-lg transition border border-slate-700"
+              className="bg-slate-800 hover:bg-red-600/20 hover:text-red-400 text-slate-300 font-semibold px-3 py-1.5 rounded-lg transition border border-slate-700 cursor-pointer"
             >
               Sair
             </button>
@@ -285,7 +304,13 @@ export default function App() {
       {/* Conteúdo Dinâmico */}
       <main className="flex-grow">
         {paginaAtual === 'home' ? (
-          <Home produtos={produtos} carregandoProdutos={carregandoProdutos} onAddToCart={handleAddToCart} />
+          <Home
+            produtos={produtos}
+            carregandoProdutos={carregandoProdutos}
+            onAddToCart={handleAddToCart}
+            dadosPerfil={dadosPerfil}
+            IrParaPerfil={() => setPaginaAtual('perfil')}
+          />
         ) : paginaAtual === 'perfil' ? (
           <Perfil user={user} dispararToast={dispararToast} />
         ) : (

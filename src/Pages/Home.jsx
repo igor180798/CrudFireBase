@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import ModalDetalhesProduto from '../components/ModalDetalhesProduto';
 
-export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
+export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosPerfil, IrParaPerfil }) {
   const [tamanhosSelecionados, setTamanhosSelecionados] = useState({});
   const [termoBusca, setTermoBusca] = useState('');
   const [tamanhoFiltro, setTamanhoFiltro] = useState('todos');
@@ -9,6 +9,10 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
 
   // Estado para o Modal de Detalhes
   const [produtoSelecionadoModal, setProdutoSelecionadoModal] = useState(null);
+
+  // Verificação rigorosa se existe algum campo essencial vazio ou em falta no perfil
+  const camposObrigatorios = ['nome', 'telefone', 'rua', 'cidade', 'estado', 'cep'];
+  const dadosIncompletos = dadosPerfil !== null && camposObrigatorios.some(campo => !dadosPerfil[campo] || String(dadosPerfil[campo]).trim() === '');
 
   const handleTamanhoChange = (produtoId, tamanho) => {
     setTamanhosSelecionados((prev) => ({ ...prev, [produtoId]: tamanho }));
@@ -96,6 +100,22 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
         ordenarTamanhos={ordenarTamanhos}
       />
 
+      {/* AVISO DE CADASTRO INCOMPLETO NA PÁGINA PRINCIPAL */}
+      {dadosIncompletos && (
+        <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-4 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+          <div>
+            <h3 className="font-bold text-amber-400 text-sm mb-1">⚠️ Atenção: Cadastro Incompleto</h3>
+            <p className="text-slate-300 text-xs">Existem informações essenciais em falta no seu perfil (como o Estado ou Morada). Complete os dados para evitar problemas nas entregas.</p>
+          </div>
+          <button
+            onClick={IrParaPerfil}
+            className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-md whitespace-nowrap cursor-pointer"
+          >
+            Completar Cadastro
+          </button>
+        </div>
+      )}
+
       {/* Cabeçalho e Controlo de Filtros */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
         <div>
@@ -118,7 +138,7 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
             <select
               value={tamanhoFiltro}
               onChange={(e) => setTamanhoFiltro(e.target.value)}
-              className="w-full sm:w-auto bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+              className="w-full sm:w-auto bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 cursor-pointer"
             >
               <option value="todos">Todos os Tamanhos</option>
               {['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', 'Único'].map(t => (
@@ -131,7 +151,7 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
             <select
               value={ordenacaoPreco}
               onChange={(e) => setOrdenacaoPreco(e.target.value)}
-              className="w-full sm:w-auto bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+              className="w-full sm:w-auto bg-[#131a27] border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500 cursor-pointer"
             >
               <option value="padrao">Ordenar por: Padrão</option>
               <option value="menor_preco">Menor Preço</option>
@@ -194,11 +214,11 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
                             type="button"
                             disabled={esgotado}
                             onClick={() => handleTamanhoChange(produto.id, item.tamanho)}
-                            className={`px-2.5 py-1 rounded-md border font-bold transition ${esgotado
-                                ? 'bg-slate-900/50 border-slate-800 text-slate-600 line-through cursor-not-allowed'
-                                : tamanhoEscolhido === item.tamanho
-                                  ? 'bg-sky-600 border-sky-500 text-white'
-                                  : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-600'
+                            className={`px-2.5 py-1 rounded-md border font-bold transition cursor-pointer ${esgotado
+                              ? 'bg-slate-900/50 border-slate-800 text-slate-600 line-through cursor-not-allowed'
+                              : tamanhoEscolhido === item.tamanho
+                                ? 'bg-sky-600 border-sky-500 text-white'
+                                : 'bg-[#0b101d] border-slate-800 text-slate-300 hover:border-slate-600'
                               }`}
                           >
                             {item.tamanho}
@@ -210,7 +230,7 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart }) {
 
                   <button
                     onClick={() => onAddToCart(produto, tamanhoEscolhido)}
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-lg transition shadow-md"
+                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-lg transition shadow-md cursor-pointer"
                   >
                     Adicionar ao Carrinho
                   </button>
