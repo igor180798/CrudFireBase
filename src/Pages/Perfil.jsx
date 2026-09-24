@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function Perfil({ user, dispararToast }) {
@@ -13,12 +13,16 @@ export default function Perfil({ user, dispararToast }) {
         estado: '',
         cep: ''
     });
+    const [encomendas, setEncomendas] = useState([]);
     const [carregando, setCarregando] = useState(true);
     const [modoEdicao, setModoEdicao] = useState(false);
 
     useEffect(() => {
-        const carregarPerfil = async () => {
-            if (!user) return;
+        const carregarDadosDoUtilizador = async () => {
+            if (!user) {
+                setCarregando(false);
+                return;
+            }
             try {
                 const docRef = doc(db, 'usuarios', user.uid);
                 const docSnap = await getDoc(docRef);
@@ -35,16 +39,31 @@ export default function Perfil({ user, dispararToast }) {
                         cep: data.endereco?.cep || data.cep || ''
                     });
                 }
+
+                const q = query(collection(db, 'encomendas'), where('userId', '==', user.uid));
+                const querySnapshot = await getDocs(q);
+                const listaEncomendas = querySnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                listaEncomendas.sort((a, b) => {
+                    const dataA = a.criadoEm?.toDate ? a.criadoEm.toDate() : (a.criadoEm ? new Date(a.criadoEm) : new Date(0));
+                    const dataB = b.criadoEm?.toDate ? b.criadoEm.toDate() : (b.criadoEm ? new Date(b.criadoEm) : new Date(0));
+                    return dataB - dataA;
+                });
+
+                setEncomendas(listaEncomendas);
+
             } catch (err) {
-                console.error("Erro ao carregar perfil:", err);
+                console.error("Erro ao carregar dados do perfil:", err);
             } finally {
                 setCarregando(false);
             }
         };
-        carregarPerfil();
+        carregarDadosDoUtilizador();
     }, [user]);
 
-    // Funções de Máscara de Formatação
     const formatarTelefone = (valor) => {
         let nums = valor.replace(/\D/g, '').slice(0, 11);
         if (nums.length <= 2) return `(${nums}`;
@@ -66,7 +85,6 @@ export default function Perfil({ user, dispararToast }) {
         return valor.replace(/\D/g, '').slice(0, 6);
     };
 
-    // Verificar se falta algum dado essencial
     const camposEmFalta = !dadosPerfil.nome || !dadosPerfil.telefone || !dadosPerfil.rua || !dadosPerfil.cidade || !dadosPerfil.estado || !dadosPerfil.cep;
 
     const handleSalvar = async (e) => {
@@ -94,11 +112,18 @@ export default function Perfil({ user, dispararToast }) {
 
     if (carregando) return <div className="text-center py-12 text-xs text-slate-400">A carregar perfil...</div>;
 
+    if (!user) {
+        return (
+            <div className="max-w-md mx-auto text-center py-24 space-y-4 text-xs text-slate-300">
+                <p>É necessário iniciar sessão para visualizar o seu perfil.</p>
+            </div>
+        );
+    }
+
     return (
-        <div className="max-w-3xl mx-auto px-4 py-8 text-xs text-slate-100 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 py-8 text-xs text-slate-100 space-y-8">
             <h1 className="text-2xl font-bold text-sky-400">Meu Perfil</h1>
 
-            {/* ALERTA DE DADOS EM FALTA */}
             {camposEmFalta && !modoEdicao && (
                 <div className="bg-amber-950/40 border border-amber-500/30 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>
@@ -114,8 +139,8 @@ export default function Perfil({ user, dispararToast }) {
                 </div>
             )}
 
-            {/* SECÇÃO DE EXIBIÇÃO OU EDIÇÃO DO PERFIL */}
             <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <h2 className="text-sm font-bold text-sky-400 mb-4">Informações Pessoais</h2>
                 {!modoEdicao ? (
                     <div className="space-y-4">
                         <div className="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -156,8 +181,6 @@ export default function Perfil({ user, dispararToast }) {
                     </div>
                 ) : (
                     <form onSubmit={handleSalvar} className="space-y-4">
-                        <h3 className="text-sm font-bold text-sky-400 mb-2">Atualizar Informações</h3>
-
                         <div>
                             <label className="block text-slate-400 font-semibold mb-1">Nome Completo:</label>
                             <input
@@ -268,6 +291,58 @@ export default function Perfil({ user, dispararToast }) {
                             </button>
                         </div>
                     </form>
+                )}
+            </div>
+
+            <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                <h2 className="text-sm font-bold text-sky-400">Minhas Encomendas</h2>
+
+                {encomendas.length === 0 ? (
+                    <p className="text-slate-400 text-center py-6">Ainda não realizou nenhuma encomenda.</p>
+                ) : (
+                    <div className="space-y-4">
+                        {encomendas.map((pedido) => (
+                            <div key={pedido.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                                <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-slate-800 pb-2 gap-1">
+                                    <div>
+                                        <span className="text-slate-400 text-[10px]">ID do Pedido:</span>
+                                        <p className="font-mono text-slate-300 font-semibold text-[11px]">{pedido.id}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-md font-semibold">
+                                            {pedido.status}
+                                        </span>
+                                        <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md uppercase font-semibold">
+                                            {pedido.metodoPagamento || 'Pix'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <span className="text-slate-400 font-semibold block">Itens Comprados:</span>
+                                    <ul className="divide-y divide-slate-800/60">
+                                        {pedido.itens?.map((item, idx) => {
+                                            const precoItem = Number(item.preco ?? item.precoUnitario ?? 0);
+                                            const qtdItem = Number(item.qtd ?? item.quantidade ?? 1);
+                                            return (
+                                                <li key={idx} className="py-1.5 flex justify-between items-center text-slate-300">
+                                                    <span>{item.nome} <span className="text-slate-500">(Tam: {item.tamanho})</span> x{qtdItem}</span>
+                                                    <span className="font-semibold text-sky-400">R$ {(precoItem * qtdItem).toFixed(2)}</span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+
+                                <div className="flex justify-between items-center pt-2 border-t border-slate-800 font-bold text-sm">
+                                    <span className="text-slate-400">Total Pago:</span>
+                                    <span className="text-emerald-400">
+                                        R$ {(Number(pedido.valorTotal ?? pedido.total ?? 0)).toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 )}
             </div>
         </div>

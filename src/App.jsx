@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, collection, getDocs, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 import Home from './Pages/Home';
 import Login from './Pages/Login';
 import PainelAdmin from './Pages/PainelAdmin';
@@ -12,16 +12,26 @@ import CartDrawer from './components/CartDrawer';
 export default function App() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [paginaAtual, setPaginaAtual] = useState('home'); // 'home', 'admin', 'perfil'
+  const [paginaAtual, setPaginaAtual] = useState('home'); // 'home', 'admin', 'perfil', 'login'
   const [produtos, setProdutos] = useState([]);
   const [carregandoProdutos, setCarregandoProdutos] = useState(true);
 
-  // Perfil do Utilizador para validação de cadastro incompleto
+  // Perfil do Utilizador
   const [dadosPerfil, setDadosPerfil] = useState(null);
 
   // Carrinho e Drawer
   const [carrinho, setCarrinho] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+
+  // Estados para o Modal de Pagamento
+  const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
+  const [dadosPagamento, setDadosPagamento] = useState({
+    metodo: 'cartao',
+    nomeTitular: '',
+    numeroCartao: '',
+    validade: '',
+    cvv: ''
+  });
 
   const [toast, setToast] = useState(null);
 
@@ -29,25 +39,33 @@ export default function App() {
     setToast({ mensagem, tipo });
   };
 
-  // Função auxiliar para sincronizar o carrinho no Firestore do utilizador atual
   const sincronizarCarrinhoNoFirestore = async (novoCarrinho, userId) => {
     if (!userId) return;
     try {
       const userRef = doc(db, 'usuarios', userId);
-      await updateDoc(userRef, {
-        carrinho: novoCarrinho
-      });
+      await updateDoc(userRef, { carrinho: novoCarrinho });
     } catch (err) {
       console.error("Erro ao sincronizar carrinho no Firestore:", err);
     }
   };
 
-  // Monitorizar Sessão, carregar carrinho, dados do perfil e verificar papel (role)
+  const carregarProdutos = async () => {
+    try {
+      setCarregandoProdutos(true);
+      const querySnapshot = await getDocs(collection(db, 'produtos'));
+      const lista = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProdutos(lista);
+    } catch (err) {
+      console.error("Erro ao carregar produtos:", err);
+    } finally {
+      setCarregandoProdutos(false);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // CARREGAR DADOS DO PERFIL E VERIFICAR PAPEL (ADMIN OU CLIENTE) NO FIRESTORE
         try {
           const docRef = doc(db, 'usuarios', currentUser.uid);
           const docSnap = await getDoc(docRef);
@@ -55,11 +73,9 @@ export default function App() {
           if (docSnap.exists()) {
             const data = docSnap.data();
 
-            // Carregar carrinho diretamente do documento do utilizador no Firestore
             if (data.carrinho && Array.isArray(data.carrinho)) {
               setCarrinho(data.carrinho);
             } else {
-              // Fallback para localStorage se não existir no Firestore ainda
               const carrinhoSalvo = localStorage.getItem(`sneakerstore_carrinho_${currentUser.uid}`);
               if (carrinhoSalvo) {
                 try {
@@ -72,7 +88,6 @@ export default function App() {
               }
             }
 
-            // Normaliza os dados para o App/Home lerem perfeitamente
             setDadosPerfil({
               nome: data.nomeCompleto || data.nome || '',
               telefone: data.telefone || '',
@@ -84,7 +99,6 @@ export default function App() {
               cep: data.endereco?.cep || data.cep || ''
             });
 
-            // Definição profissional do papel: Se for o e-mail master ou tiver role === 'admin'
             const ehAdminMaster = currentUser.email === 'igortosquibenatti@gmail.com';
             const temRoleAdmin = data.role === 'admin' || data.admin === true;
             setIsAdmin(ehAdminMaster || temRoleAdmin);
@@ -101,26 +115,14 @@ export default function App() {
 
       } else {
         setIsAdmin(false);
-        setCarrinho([]);
+        // Mantém o carrinho local anónimo se o utilizador não estiver logado
         setDadosPerfil(null);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Carregar Produtos do Firestore
   useEffect(() => {
-    async function carregarProdutos() {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'produtos'));
-        const lista = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProdutos(lista);
-      } catch (err) {
-        console.error("Erro ao carregar produtos:", err);
-      } finally {
-        setCarregandoProdutos(false);
-      }
-    }
     carregarProdutos();
   }, []);
 
@@ -146,7 +148,6 @@ export default function App() {
         novoCarrinho = [...prev, { ...produto, tamanho, qtd: 1 }];
       }
 
-      // Sincroniza com o Firestore
       if (user) {
         sincronizarCarrinhoNoFirestore(novoCarrinho, user.uid);
         localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(novoCarrinho));
@@ -167,7 +168,6 @@ export default function App() {
         novoCarrinho[index].qtd = novaQtd;
       }
 
-      // Sincroniza com o Firestore
       if (user) {
         sincronizarCarrinhoNoFirestore(novoCarrinho, user.uid);
         localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(novoCarrinho));
@@ -179,8 +179,6 @@ export default function App() {
   const handleRemoveItem = (indexParaRemover) => {
     setCarrinho(prev => {
       const novoCarrinho = prev.filter((_, index) => index !== indexParaRemover);
-
-      // Sincroniza com o Firestore
       if (user) {
         sincronizarCarrinhoNoFirestore(novoCarrinho, user.uid);
         localStorage.setItem(`sneakerstore_carrinho_${user.uid}`, JSON.stringify(novoCarrinho));
@@ -190,78 +188,58 @@ export default function App() {
     dispararToast('Item removido do carrinho.', 'info');
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (carrinho.length === 0) return;
+    if (!user) {
+      setPaginaAtual('login');
+      setIsCartOpen(false);
+      dispararToast('Por favor, faça login para finalizar a compra.', 'info');
+      return;
+    }
+    setIsCartOpen(false);
+    setModalPagamentoAberto(true);
+  };
 
+  const confirmarEProcessarPagamento = async () => {
     try {
-      const totalPedido = carrinho.reduce((acc, item) => acc + (Number(item.preco) * Number(item.qtd)), 0);
+      const itensFormatados = carrinho.map(item => ({
+        id: item.id || '',
+        nome: item.nome || 'Produto',
+        preco: Number(item.preco ?? item.valor ?? 0),
+        qtd: Number(item.qtd ?? item.quantidade ?? 1),
+        tamanho: item.tamanho || item.tamanhoSelecionado || 'Único',
+        imagem: item.imagem || item.foto || ''
+      }));
 
-      const novaEncomenda = {
-        userId: user.uid,
-        userEmail: user.email,
-        itens: carrinho.map(item => ({
-          id: item.id,
-          nome: item.nome,
-          preco: Number(item.preco),
-          tamanho: item.tamanho,
-          qtd: Number(item.qtd)
-        })),
-        total: totalPedido,
-        status: 'Aprovado / Pago',
-        criadoEm: new Date()
+      const valorTotalCalculado = itensFormatados.reduce((total, item) => total + (item.preco * item.qtd), 0);
+      const idTransacao = 'PIX-MOCK-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+
+      const novoPedido = {
+        itens: itensFormatados,
+        valorTotal: valorTotalCalculado,
+        status: 'Pago',
+        metodoPagamento: dadosPagamento.metodo || 'Pix',
+        transacaoId: idTransacao,
+        criadoEm: new Date(),
+        userId: user?.uid || null,
+        emailCliente: user?.email || ''
       };
 
-      await addDoc(collection(db, 'encomendas'), novaEncomenda);
+      await addDoc(collection(db, 'encomendas'), novoPedido);
 
-      dispararToast('Pedido finalizado com sucesso! Encomenda registada.', 'success');
-
-      // Limpa o carrinho local e no Firestore
       setCarrinho([]);
       if (user) {
         await sincronizarCarrinhoNoFirestore([], user.uid);
         localStorage.removeItem(`sneakerstore_carrinho_${user.uid}`);
       }
-      setIsCartOpen(false);
-      setPaginaAtual('perfil');
-    } catch (err) {
-      console.error("ERRO AO FINALIZAR PEDIDO:", err);
-      dispararToast(`Erro: ${err.message || 'Erro ao processar encomenda.'}`, 'error');
+
+      alert(`🎉 Pagamento aprovado com sucesso! ID: ${idTransacao}`);
+      setModalPagamentoAberto(false);
+    } catch (error) {
+      console.error("Erro ao processar pedido:", error);
+      alert("Erro ao finalizar o pedido. Tente novamente.");
     }
   };
-
-  const handleCadastrarProduto = async (novoProduto) => {
-    try {
-      const docRef = await addDoc(collection(db, 'produtos'), novoProduto);
-      setProdutos(prev => [...prev, { id: docRef.id, ...novoProduto }]);
-      dispararToast('Produto cadastrado com sucesso!', 'success');
-      setPaginaAtual('home');
-    } catch (err) {
-      console.error(err);
-      dispararToast('Erro ao cadastrar produto.', 'error');
-    }
-  };
-
-  const aoExcluirProduto = async (idProduto) => {
-    try {
-      await deleteDoc(doc(db, 'produtos', idProduto));
-      setProdutos(prev => prev.filter(prod => prod.id !== idProduto));
-      dispararToast('Produto excluído com sucesso!', 'info');
-    } catch (err) {
-      console.error("Erro ao excluir produto:", err);
-      dispararToast('Erro ao excluir produto.', 'error');
-    }
-  };
-
-  if (!user) {
-    return (
-      <>
-        {toast && (
-          <Toast message={toast.mensagem} type={toast.tipo} onClose={() => setToast(null)} />
-        )}
-        <Login dispararToast={dispararToast} />
-      </>
-    );
-  }
 
   const totalItensCarrinho = carrinho.reduce((acc, item) => acc + item.qtd, 0);
 
@@ -280,6 +258,115 @@ export default function App() {
         onCheckout={handleCheckout}
       />
 
+      {modalPagamentoAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 text-white shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-sky-400">Finalizar Pagamento</h3>
+              <button
+                onClick={() => setModalPagamentoAberto(false)}
+                className="text-gray-400 hover:text-white text-xl font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="bg-slate-800 p-3 rounded-lg mb-4 text-sm text-gray-300">
+              <p className="flex justify-between"><span>Itens no carrinho:</span> <span className="font-semibold">{totalItensCarrinho}</span></p>
+              <p className="flex justify-between mt-1 text-base text-white font-bold">
+                <span>Total a Pagar:</span>
+                <span>R$ {carrinho.reduce((acc, item) => acc + (item.preco * item.qtd), 0).toFixed(2)}</span>
+              </p>
+            </div>
+
+            <div className="flex gap-4 mb-4">
+              <button
+                type="button"
+                onClick={() => setDadosPagamento({ ...dadosPagamento, metodo: 'cartao' })}
+                className={`flex-1 py-2 rounded-lg font-medium border cursor-pointer transition ${dadosPagamento.metodo === 'cartao' ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-800 border-slate-700 text-gray-400'}`}
+              >
+                Cartão de Crédito
+              </button>
+              <button
+                type="button"
+                onClick={() => setDadosPagamento({ ...dadosPagamento, metodo: 'pix' })}
+                className={`flex-1 py-2 rounded-lg font-medium border cursor-pointer transition ${dadosPagamento.metodo === 'pix' ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-800 border-slate-700 text-gray-400'}`}
+              >
+                PIX
+              </button>
+            </div>
+
+            {dadosPagamento.metodo === 'cartao' ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Nome no Cartão</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: João da Silva"
+                    value={dadosPagamento.nomeTitular}
+                    onChange={(e) => setDadosPagamento({ ...dadosPagamento, nomeTitular: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Número do Cartão</label>
+                  <input
+                    type="text"
+                    placeholder="0000 0000 0000 0000"
+                    value={dadosPagamento.numeroCartao}
+                    onChange={(e) => setDadosPagamento({ ...dadosPagamento, numeroCartao: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-400 mb-1">Validade</label>
+                    <input
+                      type="text"
+                      placeholder="MM/AA"
+                      value={dadosPagamento.validade}
+                      onChange={(e) => setDadosPagamento({ ...dadosPagamento, validade: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-400 mb-1">CVV</label>
+                    <input
+                      type="password"
+                      placeholder="123"
+                      maxLength="4"
+                      value={dadosPagamento.cvv}
+                      onChange={(e) => setDadosPagamento({ ...dadosPagamento, cvv: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 bg-slate-800 rounded-lg border border-slate-700">
+                <p className="text-sm text-gray-300 mb-2">O pagamento via PIX será gerado instantaneamente ao confirmar.</p>
+                <span className="text-xs text-sky-400 font-semibold">Aprovação imediata</span>
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setModalPagamentoAberto(false)}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-gray-300 py-2 rounded-lg text-sm font-medium transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEProcessarPagamento}
+                className="flex-1 bg-sky-500 hover:bg-sky-400 text-slate-950 py-2 rounded-lg text-sm font-bold transition cursor-pointer"
+              >
+                Confirmar Pagamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Navbar Superior */}
       <header className="border-b border-slate-800 bg-[#131a27] sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between text-xs">
@@ -293,12 +380,14 @@ export default function App() {
                 Catálogo
               </button>
 
-              <button
-                onClick={() => setPaginaAtual('perfil')}
-                className={`transition cursor-pointer ${paginaAtual === 'perfil' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
-              >
-                Meu Perfil
-              </button>
+              {user && (
+                <button
+                  onClick={() => setPaginaAtual('perfil')}
+                  className={`transition cursor-pointer ${paginaAtual === 'perfil' ? 'text-sky-400 font-bold' : 'text-slate-300 hover:text-sky-400'}`}
+                >
+                  Meu Perfil
+                </button>
+              )}
 
               {isAdmin && (
                 <button
@@ -312,8 +401,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-4">
-            <span className="text-slate-400 hidden sm:inline">Olá, <strong className="text-slate-200">{user.email}</strong></span>
-
             <button
               onClick={() => setIsCartOpen(true)}
               className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
@@ -322,36 +409,62 @@ export default function App() {
               <span className="bg-sky-800 px-1.5 py-0.5 rounded-md text-[10px]">{totalItensCarrinho}</span>
             </button>
 
-            <button
-              onClick={handleLogout}
-              className="bg-slate-800 hover:bg-red-600/20 hover:text-red-400 text-slate-300 font-semibold px-3 py-1.5 rounded-lg transition border border-slate-700 cursor-pointer"
-            >
-              Sair
-            </button>
+            {user ? (
+              <>
+                <span className="text-slate-400 hidden sm:inline">Olá, <strong className="text-slate-200">{user?.email}</strong></span>
+                <button
+                  onClick={handleLogout}
+                  className="bg-slate-800 hover:bg-red-600/20 hover:text-red-400 text-slate-300 font-semibold px-3 py-1.5 rounded-lg transition border border-slate-700 cursor-pointer"
+                >
+                  Sair
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setPaginaAtual('login')}
+                className="bg-sky-600 hover:bg-sky-500 text-white font-semibold px-4 py-1.5 rounded-lg transition cursor-pointer"
+              >
+                Entrar
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* Conteúdo Dinâmico */}
       <main className="flex-grow">
-        {paginaAtual === 'home' ? (
+        {paginaAtual === 'home' && (
           <Home
             produtos={produtos}
             carregandoProdutos={carregandoProdutos}
             onAddToCart={handleAddToCart}
             dadosPerfil={dadosPerfil}
             IrParaPerfil={() => setPaginaAtual('perfil')}
+            onRecarregar={carregarProdutos}
           />
-        ) : paginaAtual === 'perfil' ? (
-          <Perfil user={user} dispararToast={dispararToast} />
-        ) : (
-          <PainelAdmin
-            isAdmin={isAdmin}
-            produtos={produtos}
-            aoCadastrarProduto={handleCadastrarProduto}
-            aoExcluirProduto={aoExcluirProduto}
-            dispararToast={dispararToast}
-          />
+        )}
+
+        {paginaAtual === 'perfil' && (
+          user ? <Perfil user={user} dispararToast={dispararToast} /> : <Login aoLogarSucesso={() => setPaginaAtual('perfil')} dispararToast={dispararToast} />
+        )}
+
+        {paginaAtual === 'login' && (
+          <Login aoLogarSucesso={() => setPaginaAtual('home')} dispararToast={dispararToast} />
+        )}
+
+        {paginaAtual === 'admin' && (
+          isAdmin ? (
+            <PainelAdmin
+              isAdmin={isAdmin}
+              produtos={produtos}
+              aoCadastrarProduto={carregarProdutos}
+              dispararToast={dispararToast}
+            />
+          ) : (
+            <div className="text-center py-24 text-slate-400 text-sm">
+              Acesso restrito a administradores.
+            </div>
+          )
         )}
       </main>
     </div>
