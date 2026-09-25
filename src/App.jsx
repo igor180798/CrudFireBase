@@ -23,6 +23,35 @@ export default function App() {
   const [carrinho, setCarrinho] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
+  // Estados centralizados para Marcas Manuais e Excluídas (com persistência no localStorage)
+  const [marcasManuais, setMarcasManuais] = useState(() => {
+    const salvo = localStorage.getItem('sneakerstore_marcas_manuais');
+    return salvo ? JSON.parse(salvo) : [];
+  });
+
+  const [marcasExcluidas, setMarcasExcluidas] = useState(() => {
+    const salvo = localStorage.getItem('sneakerstore_marcas_excluidas');
+    return salvo ? JSON.parse(salvo) : [];
+  });
+
+  // Salvar marcas manuais e excluídas no localStorage sempre que mudarem
+  useEffect(() => {
+    localStorage.setItem('sneakerstore_marcas_manuais', JSON.stringify(marcasManuais));
+  }, [marcasManuais]);
+
+  useEffect(() => {
+    localStorage.setItem('sneakerstore_marcas_excluidas', JSON.stringify(marcasExcluidas));
+  }, [marcasExcluidas]);
+
+  // Lista dinâmica e combinada de marcas disponíveis para toda a aplicação
+  const marcasDisponiveis = React.useMemo(() => {
+    const marcasDosProdutos = produtos.map(p => p.marca).filter(Boolean);
+    const marcasBase = ['Nike', 'Adidas', 'All Star', 'Vans', 'Puma', 'New Balance'];
+    const todas = Array.from(new Set([...marcasBase, ...marcasManuais, ...marcasDosProdutos]));
+    // Remove as marcas que o utilizador excluiu explicitamente
+    return todas.filter(m => !marcasExcluidas.includes(m)).sort();
+  }, [produtos, marcasManuais, marcasExcluidas]);
+
   // Estados para o Modal de Pagamento
   const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
   const [dadosPagamento, setDadosPagamento] = useState({
@@ -115,7 +144,6 @@ export default function App() {
 
       } else {
         setIsAdmin(false);
-        // Mantém o carrinho local anónimo se o utilizador não estiver logado
         setDadosPerfil(null);
       }
     });
@@ -441,6 +469,7 @@ export default function App() {
             dadosPerfil={dadosPerfil}
             IrParaPerfil={() => setPaginaAtual('perfil')}
             onRecarregar={carregarProdutos}
+            marcasDisponiveis={marcasDisponiveis}
           />
         )}
 
@@ -459,6 +488,10 @@ export default function App() {
               produtos={produtos}
               aoCadastrarProduto={carregarProdutos}
               dispararToast={dispararToast}
+              marcasManuais={marcasManuais}
+              setMarcasManuais={setMarcasManuais}
+              marcasExcluidas={marcasExcluidas}
+              setMarcasExcluidas={setMarcasExcluidas}
             />
           ) : (
             <div className="text-center py-24 text-slate-400 text-sm">

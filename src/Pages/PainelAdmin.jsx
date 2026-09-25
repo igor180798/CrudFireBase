@@ -2,13 +2,44 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 
-export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoExcluirProduto, dispararToast }) {
-  const [abaAtiva, setAbaAtiva] = useState('produtos'); // 'produtos', 'vendas' ou 'usuarios'
+export default function PainelAdmin({
+  isAdmin,
+  produtos,
+  marcasManuais,       // Recebido via props do App.jsx
+  setMarcasManuais,    // Recebido via props do App.jsx
+  marcasExcluidas,     // Recebido via props do App.jsx
+  setMarcasExcluidas,  // Recebido via props do App.jsx
+  aoCadastrarProduto,
+  aoExcluirProduto,
+  dispararToast,
+  onRecarregar
+}) {
+  const [abaAtiva, setAbaAtiva] = useState('produtos'); // 'produtos', 'vendas', 'usuarios' ou 'marcas'
+
+  // Lista base de marcas padrão do sistema
+  const marcasBasePadrao = ['Nike', 'Adidas', 'All Star', 'Vans', 'Puma', 'New Balance'];
+
+  // Lista dinâmica e combinada de marcas disponíveis (Base + Manuais + Produtos, menos as excluídas)
+  const marcasDisponiveis = React.useMemo(() => {
+    const marcasDosProdutos = produtos.map(p => p.marca).filter(Boolean);
+    const todas = Array.from(new Set([...marcasBasePadrao, ...marcasManuais, ...marcasDosProdutos]));
+    // Remove as marcas que o utilizador excluiu explicitamente
+    return todas.filter(m => !marcasExcluidas.includes(m)).sort();
+  }, [produtos, marcasManuais, marcasExcluidas]);
+
+  // Estados para nova marca no CADASTRO
+  const [novaMarcaInput, setNovaMarcaInput] = useState('');
+  const [mostrarCampoNovaMarca, setMostrarCampoNovaMarca] = useState(false);
+
+  // Estados para nova marca na EDIÇÃO
+  const [editNovaMarcaInput, setEditNovaMarcaInput] = useState('');
+  const [mostrarCampoEditNovaMarca, setMostrarCampoEditNovaMarca] = useState(false);
 
   // Estados de Cadastro
   const [nome, setNome] = useState('');
+  const [marca, setMarca] = useState('Nike');
   const [preco, setPreco] = useState('');
-  const [descricao, setDescricao] = useState('');
+  const [descricao, setDescdescricao] = useState('');
   const [imagemBase64, setImagemBase64] = useState('');
   const [nomeFicheiro, setNomeFicheiro] = useState('');
 
@@ -22,7 +53,12 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
   const [produtoSelecionado, setProdutoSelecionado] = useState(null);
   const [tamanhosFormatados, setTamanhosFormatados] = useState([]);
 
-  // Estados melhorados para Gestão de Stock do Produto Selecionado
+  // Estados de Edição do Produto Selecionado
+  const [editNome, setEditNome] = useState('');
+  const [editMarca, setEditMarca] = useState('Nike');
+  const [editPreco, setEditPreco] = useState('');
+
+  // Estados para Gestão de Stock do Produto Selecionado
   const [modoGestao, setModoGestao] = useState('adicionar'); // 'adicionar' ou 'remover'
   const [alvoGestao, setAlvoGestao] = useState('especifico'); // 'especifico' ou 'todos'
   const [tamanhoParaGerir, setTamanhoParaGerir] = useState('');
@@ -126,6 +162,65 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
     }
   };
 
+  const handleAdicionarNovaMarca = () => {
+    const nomeMarcaFormatado = novaMarcaInput.trim();
+    if (!nomeMarcaFormatado) {
+      dispararToast('Insira o nome da nova marca.', 'error');
+      return;
+    }
+
+    if (marcasDisponiveis.some(m => m.toLowerCase() === nomeMarcaFormatado.toLowerCase())) {
+      dispararToast('Esta marca já existe na lista.', 'error');
+      return;
+    }
+
+    setMarcasExcluidas(prev => prev.filter(m => m.toLowerCase() !== nomeMarcaFormatado.toLowerCase()));
+    setMarcasManuais(prev => [...prev, nomeMarcaFormatado]);
+    setMarca(nomeMarcaFormatado);
+    setNovaMarcaInput('');
+    setMostrarCampoNovaMarca(false);
+    dispararToast(`Marca "${nomeMarcaFormatado}" adicionada e selecionada com sucesso!`, 'success');
+  };
+
+  const handleAdicionarNovaMarcaEdicao = () => {
+    const nomeMarcaFormatado = editNovaMarcaInput.trim();
+    if (!nomeMarcaFormatado) {
+      dispararToast('Insira o nome da nova marca.', 'error');
+      return;
+    }
+
+    if (marcasDisponiveis.some(m => m.toLowerCase() === nomeMarcaFormatado.toLowerCase())) {
+      dispararToast('Esta marca já existe na lista.', 'error');
+      return;
+    }
+
+    setMarcasExcluidas(prev => prev.filter(m => m.toLowerCase() !== nomeMarcaFormatado.toLowerCase()));
+    setMarcasManuais(prev => [...prev, nomeMarcaFormatado]);
+    setEditMarca(nomeMarcaFormatado);
+    setEditNovaMarcaInput('');
+    setMostrarCampoEditNovaMarca(false);
+    dispararToast(`Marca "${nomeMarcaFormatado}" adicionada e selecionada!`, 'success');
+  };
+
+  const handleExcluirMarca = (marcaParaExcluir) => {
+    const produtosComEstaMarca = produtos.filter(p => p.marca?.toLowerCase() === marcaParaExcluir.toLowerCase());
+
+    if (produtosComEstaMarca.length > 0) {
+      dispararToast(`Não é possível excluir "${marcaParaExcluir}" porque existem ${produtosComEstaMarca.length} produtos associados. Altere a marca desses produtos primeiro.`, 'error');
+      return;
+    }
+
+    if (window.confirm(`Tem certeza que deseja excluir a marca "${marcaParaExcluir}"?`)) {
+      setMarcasManuais(prev => prev.filter(m => m !== marcaParaExcluir));
+      setMarcasExcluidas(prev => [...prev, marcaParaExcluir]);
+
+      if (marca === marcaParaExcluir) setMarca('Nike');
+      if (editMarca === marcaParaExcluir) setEditMarca('Nike');
+
+      if (dispararToast) dispararToast(`Marca "${marcaParaExcluir}" excluída com sucesso!`, 'success');
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] text-center p-6 text-xs">
@@ -153,17 +248,30 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
     });
   };
 
+  const formatarPrecoInput = (valorEmCentavos) => {
+    if (!valorEmCentavos) return '';
+    return (parseInt(valorEmCentavos, 10) / 100).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
   const handlePrecoChange = (e) => {
     let valor = e.target.value.replace(/\D/g, '');
     if (!valor) {
       setPreco('');
       return;
     }
-    let numero = (parseInt(valor, 10) / 100).toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
-    setPreco(numero);
+    setPreco(formatarPrecoInput(valor));
+  };
+
+  const handleEditPrecoChange = (e) => {
+    let valor = e.target.value.replace(/\D/g, '');
+    if (!valor) {
+      setEditPreco('');
+      return;
+    }
+    setEditPreco(formatarPrecoInput(valor));
   };
 
   const handleImagemChange = (e) => {
@@ -207,7 +315,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (!nome.trim() || !preco || !imagemBase64 || listaTamanhos.length === 0) {
+    if (!nome.trim() || !marca || !preco || !imagemBase64 || listaTamanhos.length === 0) {
       dispararToast('Preencha todos os campos obrigatórios e adicione tamanhos/stock.', 'error');
       return;
     }
@@ -216,6 +324,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
 
     const novoProduto = {
       nome,
+      marca,
       preco: precoNumerico,
       descricao: descricao || '',
       imagem: imagemBase64,
@@ -227,7 +336,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
 
     setNome('');
     setPreco('');
-    setDescricao('');
+    setDescdescricao('');
     setImagemBase64('');
     setNomeFicheiro('');
     setListaTamanhos([]);
@@ -257,13 +366,50 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
 
   const selecionarProdutoParaGestao = (produto) => {
     setProdutoSelecionado(produto);
+    setEditNome(produto.nome || '');
+    setEditMarca(produto.marca || 'Nike');
+    setEditPreco(produto.preco ? Number(produto.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
+
     const tamanhosExtraidos = extrairTamanhosDoProduto(produto);
     setTamanhosFormatados(tamanhosExtraidos);
     setTamanhoParaGerir(tamanhosExtraidos[0]?.tamanho || '');
     setQuantidadeMovimento(1);
+    setMostrarCampoEditNovaMarca(false);
   };
 
-  // Obter o limite máximo de estoque para o tamanho selecionado atualmente
+  const salvarAlteracoesProduto = async () => {
+    if (!produtoSelecionado) return;
+
+    if (!editNome.trim() || !editMarca || !editPreco) {
+      dispararToast('Nome, marca e preço são obrigatórios.', 'error');
+      return;
+    }
+
+    const precoNumerico = parseFloat(editPreco.replace(/\./g, '').replace(',', '.'));
+
+    try {
+      const docRef = doc(db, 'produtos', produtoSelecionado.id);
+      await updateDoc(docRef, {
+        nome: editNome.trim(),
+        marca: editMarca,
+        preco: precoNumerico
+      });
+
+      setProdutoSelecionado({
+        ...produtoSelecionado,
+        nome: editNome.trim(),
+        marca: editMarca,
+        preco: precoNumerico
+      });
+
+      dispararToast('Informações do produto atualizadas com sucesso!', 'success');
+      if (typeof onRecarregar === 'function') onRecarregar();
+    } catch (err) {
+      console.error("Erro ao atualizar produto:", err);
+      dispararToast('Erro ao atualizar dados do produto.', 'error');
+    }
+  };
+
   const obterQuantidadeMaximaDisponivel = () => {
     if (alvoGestao === 'especifico' && tamanhoParaGerir) {
       const itemEncontrado = tamanhosFormatados.find(t => t.tamanho === tamanhoParaGerir);
@@ -272,7 +418,6 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
     return 999999;
   };
 
-  // Função robusta para atualizar o stock do produto selecionado no Firebase
   const executarAtualizacaoStock = async () => {
     if (!produtoSelecionado) return;
 
@@ -282,12 +427,11 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
       return;
     }
 
-    // Validação estrita se estiver no modo de remoção para tamanho específico
     if (modoGestao === 'remover' && alvoGestao === 'especifico') {
       const maxDisponivel = obterQuantidadeMaximaDisponivel();
       if (qtdNum > maxDisponivel) {
         dispararToast(`Não pode remover ${qtdNum} unidades. O stock atual deste tamanho é apenas ${maxDisponivel}.`, 'error');
-        setQuantidadeMovimento(maxDisponivel); // Ajusta automaticamente para o máximo permitido
+        setQuantidadeMovimento(maxDisponivel);
         return;
       }
     }
@@ -348,6 +492,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
       setProdutoSelecionado(produtoAtualizadoLocal);
 
       dispararToast('Stock atualizado com sucesso!', 'success');
+      if (typeof onRecarregar === 'function') onRecarregar();
     } catch (err) {
       console.error("Erro ao atualizar stock:", err);
       dispararToast('Erro ao atualizar stock no servidor.', 'error');
@@ -392,28 +537,33 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 text-xs space-y-8 text-slate-100">
-      {/* Cabeçalho e Abas */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#131a27] border border-slate-800 p-5 rounded-2xl shadow-xl">
         <div>
           <h2 className="text-2xl font-extrabold text-sky-400 tracking-tight">Painel Administrativo</h2>
-          <p className="text-slate-400 mt-0.5">Registo, gestão de stock, encomendas e utilizadores</p>
+          <p className="text-slate-400 mt-0.5">Registo, gestão de stock, encomendas, marcas e utilizadores</p>
         </div>
 
-        <div className="flex bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1 w-full sm:w-auto">
+        <div className="flex flex-wrap bg-slate-950 border border-slate-800 rounded-xl p-1 gap-1 w-full sm:w-auto">
           <button
             onClick={() => setAbaAtiva('produtos')}
-            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'produtos' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
+            className={`flex-1 sm:flex-none px-3 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'produtos' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
           >
             📦 Produtos
+          </button>
+          <button
+            onClick={() => {
+              setAbaAtiva('marcas');
+            }}
+            className={`flex-1 sm:flex-none px-3 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'marcas' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+          >
+            🏷️ Marcas ({marcasDisponiveis.length})
           </button>
           <button
             onClick={() => {
               setAbaAtiva('vendas');
               carregarEncomendas();
             }}
-            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'vendas' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
+            className={`flex-1 sm:flex-none px-3 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'vendas' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
           >
             🛒 Vendas ({encomendas.length})
           </button>
@@ -422,18 +572,15 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
               setAbaAtiva('usuarios');
               carregarUsuarios();
             }}
-            className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'usuarios' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
+            className={`flex-1 sm:flex-none px-3 py-2 rounded-lg font-bold transition cursor-pointer text-center ${abaAtiva === 'usuarios' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
           >
             👥 Utilizadores ({usuarios.length})
           </button>
         </div>
       </div>
 
-      {/* ABA DE PRODUTOS */}
       {abaAtiva === 'produtos' && (
         <div className="space-y-6">
-          {/* Formulário de Cadastro */}
           <div className="bg-[#131a27] border border-slate-800 p-6 rounded-2xl shadow-xl space-y-5">
             <div className="border-b border-slate-800 pb-3">
               <h3 className="text-sm font-bold text-slate-200">Adicionar Novo Produto</h3>
@@ -441,8 +588,8 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2">
                   <label className="block mb-1 font-semibold text-slate-300">Nome do Sneaker</label>
                   <input
                     type="text"
@@ -453,6 +600,50 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                   />
                 </div>
 
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="font-semibold text-slate-300">Marca</label>
+                    <button
+                      type="button"
+                      onClick={() => setMostrarCampoNovaMarca(!mostrarCampoNovaMarca)}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 font-bold underline bg-transparent cursor-pointer"
+                    >
+                      {mostrarCampoNovaMarca ? 'Cancelar' : '+ Nova Marca'}
+                    </button>
+                  </div>
+
+                  {mostrarCampoNovaMarca ? (
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={novaMarcaInput}
+                        onChange={(e) => setNovaMarcaInput(e.target.value)}
+                        placeholder="Nome da marca"
+                        className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAdicionarNovaMarca}
+                        className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl font-bold cursor-pointer shrink-0"
+                      >
+                        OK
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={marca}
+                      onChange={(e) => setMarca(e.target.value)}
+                      className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition cursor-pointer"
+                    >
+                      {marcasDisponiveis.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Preço (R$)</label>
                   <div className="flex items-center bg-[#0b101d] border border-slate-800 rounded-xl overflow-hidden focus-within:border-sky-500 transition">
@@ -466,20 +657,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     />
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block mb-1 font-semibold text-slate-300">Descrição do Sneaker</label>
-                <textarea
-                  value={descricao}
-                  onChange={(e) => setDescricao(e.target.value)}
-                  rows="2"
-                  placeholder="Detalhes sobre o conforto, material e design..."
-                  className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Imagem do Dispositivo</label>
                   <label className="flex items-center justify-center w-full bg-[#0b101d] border border-slate-800 hover:border-sky-500 rounded-xl p-3 text-slate-300 cursor-pointer transition shadow-inner">
@@ -492,37 +670,48 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     />
                   </label>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block mb-1 font-semibold text-slate-300">Gerir Tamanhos e Stock</label>
-                  <div className="flex gap-2">
-                    <select
-                      value={tamanhoAtual}
-                      onChange={(e) => setTamanhoAtual(e.target.value)}
-                      className="bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 flex-1"
-                    >
-                      {['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', 'Único'].map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+              <div>
+                <label className="block mb-1 font-semibold text-slate-300">Descrição do Sneaker</label>
+                <textarea
+                  value={descricao}
+                  onChange={(e) => setDescdescricao(e.target.value)}
+                  rows="2"
+                  placeholder="Detalhes sobre o conforto, material e design..."
+                  className="w-full bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 transition"
+                />
+              </div>
 
-                    <input
-                      type="number"
-                      min="1"
-                      value={qtdAtual}
-                      onChange={(e) => setQtdAtual(e.target.value)}
-                      placeholder="Qtd"
-                      className="w-20 bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 text-center"
-                    />
+              <div>
+                <label className="block mb-1 font-semibold text-slate-300">Gerir Tamanhos e Stock</label>
+                <div className="flex gap-2">
+                  <select
+                    value={tamanhoAtual}
+                    onChange={(e) => setTamanhoAtual(e.target.value)}
+                    className="bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 flex-1"
+                  >
+                    {['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', 'Único'].map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
 
-                    <button
-                      type="button"
-                      onClick={handleAdicionarTamanho}
-                      className="bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white font-semibold px-4 py-3 rounded-xl transition border border-slate-700 cursor-pointer shrink-0"
-                    >
-                      Adicionar
-                    </button>
-                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={qtdAtual}
+                    onChange={(e) => setQtdAtual(e.target.value)}
+                    placeholder="Qtd"
+                    className="w-20 bg-[#0b101d] border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-sky-500 text-center"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleAdicionarTamanho}
+                    className="bg-slate-800 hover:bg-sky-600 text-slate-200 hover:text-white font-semibold px-4 py-3 rounded-xl transition border border-slate-700 cursor-pointer shrink-0"
+                  >
+                    Adicionar
+                  </button>
                 </div>
               </div>
 
@@ -558,7 +747,6 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
             </form>
           </div>
 
-          {/* Secção de Gestão / Exclusão de Produtos */}
           <div className="bg-[#131a27] border border-slate-800 p-6 rounded-2xl shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-3 gap-3">
               <div>
@@ -611,8 +799,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     <div
                       key={produto.id}
                       onClick={() => selecionarProdutoParaGestao(produto)}
-                      className={`flex items-center justify-between bg-[#0b101d] border p-3.5 rounded-xl cursor-pointer transition ${isSelecionadoParaGestao ? 'border-sky-500 bg-sky-950/20 shadow' : 'border-slate-800 hover:border-slate-700'
-                        }`}
+                      className={`flex items-center justify-between bg-[#0b101d] border p-3.5 rounded-xl cursor-pointer transition ${isSelecionadoParaGestao ? 'border-sky-500 bg-sky-950/20 shadow' : 'border-slate-800 hover:border-slate-700'}`}
                     >
                       <div className="flex items-center space-x-3 truncate">
                         <input
@@ -628,12 +815,14 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                         />
                         <div className="truncate">
                           <p className="font-bold text-slate-200 truncate">{produto.nome}</p>
-                          <p className="text-sky-400 font-medium">R$ {Number(produto.preco || 0).toFixed(2)}</p>
+                          <span className="text-[10px] text-sky-400 bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-900/40">
+                            {produto.marca || 'Sem Marca'}
+                          </span>
+                          <p className="text-slate-300 font-medium">R$ {Number(produto.preco || 0).toFixed(2)}</p>
                         </div>
                       </div>
 
-                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg shrink-0 ml-2 ${isSelecionadoParaGestao ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'
-                        }`}>
+                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg shrink-0 ml-2 ${isSelecionadoParaGestao ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
                         {isSelecionadoParaGestao ? 'A gerir' : 'Selecionar'}
                       </span>
                     </div>
@@ -643,9 +832,8 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
             )}
           </div>
 
-          {/* PAINEL DETALHADO DE GESTÃO DE STOCK DO PRODUTO SELECIONADO */}
           {produtoSelecionado && (
-            <div className="bg-[#131a27] border border-sky-500/50 p-6 rounded-2xl shadow-xl space-y-5">
+            <div className="bg-[#131a27] border border-sky-500/50 p-6 rounded-2xl shadow-xl space-y-6">
               <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                 <div className="flex items-center space-x-3">
                   <img
@@ -654,8 +842,8 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                     className="w-12 h-12 object-contain bg-slate-900 rounded-xl border border-slate-800 p-1"
                   />
                   <div>
-                    <h3 className="text-sm font-bold text-sky-400">A Gerir Stock: {produtoSelecionado.nome}</h3>
-                    <p className="text-slate-400 text-[11px]">Modifique quantidades por tamanho específico ou em lote.</p>
+                    <h3 className="text-sm font-bold text-sky-400">A Gerir / Editar: {produtoSelecionado.nome}</h3>
+                    <p className="text-slate-400 text-[11px]">Atualize nome, marca, preço ou faça a gestão de stock.</p>
                   </div>
                 </div>
                 <button
@@ -667,7 +855,86 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 </button>
               </div>
 
-              {/* Lista Atual de Stock por Tamanho */}
+              <div className="bg-[#0b101d] border border-slate-800 p-4 rounded-xl space-y-4">
+                <span className="block font-bold text-slate-200 text-xs">Informações Principais do Produto:</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-1">
+                    <label className="block mb-1 font-semibold text-slate-400 text-[11px]">Nome do Sneaker</label>
+                    <input
+                      type="text"
+                      value={editNome}
+                      onChange={(e) => setEditNome(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="font-semibold text-slate-400 text-[11px]">Marca</label>
+                      <button
+                        type="button"
+                        onClick={() => setMostrarCampoEditNovaMarca(!mostrarCampoEditNovaMarca)}
+                        className="text-[10px] text-sky-400 hover:text-sky-300 font-bold underline bg-transparent cursor-pointer"
+                      >
+                        {mostrarCampoEditNovaMarca ? 'Cancelar' : '+ Nova Marca'}
+                      </button>
+                    </div>
+
+                    {mostrarCampoEditNovaMarca ? (
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={editNovaMarcaInput}
+                          onChange={(e) => setEditNovaMarcaInput(e.target.value)}
+                          placeholder="Nome da marca"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-sky-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAdicionarNovaMarcaEdicao}
+                          className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl font-bold cursor-pointer shrink-0"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        value={editMarca}
+                        onChange={(e) => setEditMarca(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-sky-500 cursor-pointer"
+                      >
+                        {marcasDisponiveis.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block mb-1 font-semibold text-slate-400 text-[11px]">Preço (R$)</label>
+                    <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl overflow-hidden focus-within:border-sky-500">
+                      <span className="pl-3 text-slate-400 font-semibold">R$</span>
+                      <input
+                        type="text"
+                        value={editPreco}
+                        onChange={handleEditPrecoChange}
+                        className="w-full bg-transparent p-2.5 text-slate-200 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={salvarAlteracoesProduto}
+                    className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-4 py-2 rounded-xl transition shadow cursor-pointer text-xs"
+                  >
+                    💾 Salvar Alterações de Dados
+                  </button>
+                </div>
+              </div>
+
               <div className="bg-[#0b101d] border border-slate-800 p-4 rounded-xl space-y-2">
                 <span className="block font-bold text-slate-300 text-xs">Stock Atual por Tamanho:</span>
                 <div className="flex flex-wrap gap-2">
@@ -684,9 +951,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 </div>
               </div>
 
-              {/* Controles de Ação de Stock */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* 1. Adicionar ou Remover */}
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Operação</label>
                   <select
@@ -699,7 +964,6 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                   </select>
                 </div>
 
-                {/* 2. Tamanho Específico ou Todos */}
                 <div>
                   <label className="block mb-1 font-semibold text-slate-300">Aplicar a</label>
                   <select
@@ -712,7 +976,6 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                   </select>
                 </div>
 
-                {/* 3. Seleção do Tamanho (Condicional se for específico) */}
                 {alvoGestao === 'especifico' ? (
                   <div>
                     <label className="block mb-1 font-semibold text-slate-300">Escolher Tamanho</label>
@@ -738,7 +1001,6 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 )}
               </div>
 
-              {/* Quantidade e Botão de Confirmação com Restrição Automática (max) */}
               <div className="flex flex-col sm:flex-row gap-3 items-end pt-2">
                 <div className="w-full sm:w-48">
                   <label className="block mb-1 font-semibold text-slate-300">
@@ -754,7 +1016,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                       if (val !== '' && modoGestao === 'remover' && alvoGestao === 'especifico') {
                         const num = parseInt(val, 10);
                         const max = obterQuantidadeMaximaDisponivel();
-                        if (num > max) val = max; // Trava o valor no limite máximo se exceder
+                        if (num > max) val = max;
                       }
                       setQuantidadeMovimento(val);
                     }}
@@ -765,8 +1027,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                 <button
                   type="button"
                   onClick={executarAtualizacaoStock}
-                  className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold transition shadow-lg cursor-pointer ${modoGestao === 'adicionar' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-red-600 hover:bg-red-500 text-white'
-                    }`}
+                  className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold transition shadow-lg cursor-pointer ${modoGestao === 'adicionar' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-red-600 hover:bg-red-500 text-white'}`}
                 >
                   {modoGestao === 'adicionar' ? 'Confirmar Adição' : 'Confirmar Remoção'}
                 </button>
@@ -776,7 +1037,57 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
         </div>
       )}
 
-      {/* ABA DE VENDAS */}
+      {abaAtiva === 'marcas' && (
+        <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex justify-between items-center mb-2 pb-3 border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-sky-400">🏷️ Gestão Geral de Marcas</h3>
+              <p className="text-slate-400 text-[11px]">Consulte todas as marcas ativas no sistema e remova as que não utiliza.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {marcasDisponiveis.map((m, idx) => {
+              const produtosAssociados = produtos.filter(p => p.marca?.toLowerCase() === m.toLowerCase());
+              const temProdutos = produtosAssociados.length > 0;
+              const isBase = marcasBasePadrao.includes(m);
+
+              return (
+                <div key={idx} className="bg-[#0b101d] border border-slate-800 p-4 rounded-xl flex flex-col justify-between space-y-3 shadow-sm">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-extrabold text-slate-200 text-sm block">{m}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {temProdutos ? `${produtosAssociados.length} produto(s) associado(s)` : 'Nenhum produto associado'}
+                      </span>
+                    </div>
+
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isBase ? 'bg-slate-800 text-slate-300' : 'bg-sky-950/40 text-sky-400 border border-sky-900/40'}`}>
+                      {isBase ? 'Padrão' : 'Personalizada'}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-900 flex justify-between items-center">
+                    <span className={`text-[10px] ${temProdutos ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                      {temProdutos ? '⚠️ Bloqueado (Em uso)' : 'Disponível'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleExcluirMarca(m)}
+                      disabled={temProdutos}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${temProdutos ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed opacity-50' : 'bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white cursor-pointer'}`}
+                      title={temProdutos ? 'Não pode excluir marcas com produtos vinculados' : 'Excluir marca'}
+                    >
+                      🗑️ Excluir
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {abaAtiva === 'vendas' && (
         <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex justify-between items-center mb-2 pb-3 border-b border-slate-800">
@@ -856,7 +1167,6 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
         </div>
       )}
 
-      {/* ABA DE UTILIZADORES */}
       {abaAtiva === 'usuarios' && (
         <div className="bg-[#131a27] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-3 gap-3">
@@ -899,8 +1209,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                   <div
                     key={user.id}
                     onClick={() => selecionarUtilizadorParaDetalhes(user)}
-                    className={`bg-[#0b101d] border p-4 rounded-xl cursor-pointer transition space-y-3 ${isSelected ? 'border-sky-500 bg-sky-950/20 shadow-lg' : 'border-slate-800 hover:border-slate-700'
-                      }`}
+                    className={`bg-[#0b101d] border p-4 rounded-xl cursor-pointer transition space-y-3 ${isSelected ? 'border-sky-500 bg-sky-950/20 shadow-lg' : 'border-slate-800 hover:border-slate-700'}`}
                   >
                     <div className="flex justify-between items-start">
                       <div>
@@ -909,8 +1218,7 @@ export default function PainelAdmin({ isAdmin, produtos, aoCadastrarProduto, aoE
                       </div>
 
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${user.isAdmin ? 'bg-purple-950/60 border border-purple-500/30 text-purple-400' : 'bg-slate-800 text-slate-400'
-                          }`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${user.isAdmin ? 'bg-purple-950/60 border border-purple-500/30 text-purple-400' : 'bg-slate-800 text-slate-400'}`}>
                           {user.isAdmin ? 'Admin' : 'Cliente'}
                         </span>
                         <button

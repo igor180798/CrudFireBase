@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
 
-export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosPerfil, IrParaPerfil, onRecarregar }) {
+export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosPerfil, IrParaPerfil, onRecarregar, marcasDisponiveis }) {
   const [busca, setBusca] = useState('');
   const [marcasSelecionadas, setMarcasSelecionadas] = useState([]);
   const [produtoModal, setProdutoModal] = useState(null);
   const [tamanhoSelecionado, setTamanhoSelecionado] = useState('');
-
-  // Lista fixa ou dinâmica de marcas disponíveis para seleção
-  const marcasDisponiveis = ['Nike', 'Adidas', 'All Star', 'Vans', 'Puma', 'New Balance'];
 
   // Manipular alteração das checkboxes de marcas
   const handleToggleMarca = (marca) => {
@@ -103,8 +100,8 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosP
             )}
           </div>
 
-          <div className="space-y-3">
-            {marcasDisponiveis.map((marca, index) => {
+          <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+            {Array.isArray(marcasDisponiveis) && marcasDisponiveis.map((marca, index) => {
               const selecionada = marcasSelecionadas.includes(marca);
               return (
                 <label
@@ -245,10 +242,10 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosP
                           disabled={esgotado}
                           onClick={() => setTamanhoSelecionado(item.tamanho)}
                           className={`py-3 rounded-xl border text-xs font-bold flex flex-col items-center justify-center transition ${esgotado
-                              ? 'bg-slate-950/40 border-slate-900 text-slate-600 cursor-not-allowed opacity-50'
-                              : selecionado
-                                ? 'bg-sky-600 border-sky-500 text-white shadow-lg shadow-sky-900/30 cursor-pointer'
-                                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700 cursor-pointer'
+                            ? 'bg-slate-950/40 border-slate-900 text-slate-600 cursor-not-allowed opacity-50'
+                            : selecionado
+                              ? 'bg-sky-600 border-sky-500 text-white shadow-lg shadow-sky-900/30 cursor-pointer'
+                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700 cursor-pointer'
                             }`}
                         >
                           <span className="text-sm">{item.tamanho}</span>

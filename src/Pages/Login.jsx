@@ -3,7 +3,7 @@ import { auth, db } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
-export default function Login({ dispararToast }) {
+export default function Login({ aoLogarSucesso, dispararToast }) {
   const [emailAuth, setEmailAuth] = useState('');
   const [senhaAuth, setSenhaAuth] = useState('');
 
@@ -124,6 +124,12 @@ export default function Login({ dispararToast }) {
         await signInWithEmailAndPassword(auth, emailAuth, senhaAuth);
         dispararToast('Sessão iniciada com sucesso!');
       }
+
+      // Redireciona automaticamente após sucesso (login ou cadastro)
+      if (aoLogarSucesso) {
+        aoLogarSucesso();
+      }
+
     } catch (err) {
       console.error(err);
       dispararToast(err.message || 'Erro na autenticação.', 'error');
