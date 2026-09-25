@@ -2,16 +2,36 @@ import React, { useState } from 'react';
 
 export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosPerfil, IrParaPerfil, onRecarregar }) {
   const [busca, setBusca] = useState('');
+  const [marcasSelecionadas, setMarcasSelecionadas] = useState([]);
   const [produtoModal, setProdutoModal] = useState(null);
   const [tamanhoSelecionado, setTamanhoSelecionado] = useState('');
 
-  // Filtra os produtos com base na pesquisa
-  const produtosFiltrados = produtos.filter(produto =>
-    produto.nome?.toLowerCase().includes(busca.toLowerCase()) ||
-    produto.marca?.toLowerCase().includes(busca.toLowerCase())
-  );
+  // Lista fixa ou dinâmica de marcas disponíveis para seleção
+  const marcasDisponiveis = ['Nike', 'Adidas', 'All Star', 'Vans', 'Puma', 'New Balance'];
 
-  // Função auxiliar para obter a lista de tamanhos do produto (suportando diferentes nomes de campos)
+  // Manipular alteração das checkboxes de marcas
+  const handleToggleMarca = (marca) => {
+    setMarcasSelecionadas(prev =>
+      prev.includes(marca)
+        ? prev.filter(m => m !== marca)
+        : [...prev, marca]
+    );
+  };
+
+  // Filtra os produtos com base na pesquisa de texto e nas marcas selecionadas
+  const produtosFiltrados = produtos.filter(produto => {
+    const correspondeBusca =
+      produto.nome?.toLowerCase().includes(busca.toLowerCase()) ||
+      produto.marca?.toLowerCase().includes(busca.toLowerCase());
+
+    const correspondeMarca =
+      marcasSelecionadas.length === 0 ||
+      marcasSelecionadas.some(m => m.toLowerCase() === produto.marca?.toLowerCase());
+
+    return correspondeBusca && correspondeMarca;
+  });
+
+  // Função auxiliar para obter a lista de tamanhos do produto
   const obterTamanhos = (produto) => {
     return produto.tamanhosEstoque || produto.tamanhos || [];
   };
@@ -20,7 +40,6 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosP
     setProdutoModal(produto);
     const listaTamanhos = obterTamanhos(produto);
 
-    // Se o produto tiver tamanhos cadastrados, seleciona o primeiro por defeito
     if (Array.isArray(listaTamanhos) && listaTamanhos.length > 0) {
       setTamanhoSelecionado(listaTamanhos[0].tamanho);
     } else {
@@ -49,7 +68,7 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosP
         </div>
       )}
 
-      {/* Barra de Pesquisa e Cabeçalho */}
+      {/* Cabeçalho com Título e Barra de Pesquisa */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-100">Catálogo de Sneakers</h1>
@@ -67,85 +86,125 @@ export default function Home({ produtos, carregandoProdutos, onAddToCart, dadosP
         </div>
       </div>
 
-      {/* Renderização Condicional: Carregamento, Vazio ou Lista */}
-      {carregandoProdutos ? (
-        <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-3">
-          <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs font-medium animate-pulse">A carregar catálogo de sneakers...</p>
-        </div>
-      ) : produtosFiltrados.length === 0 ? (
-        <div className="text-center py-20 text-slate-500 space-y-4">
-          <p className="text-3xl">👟</p>
-          <p className="text-sm font-medium">Nenhum produto encontrado.</p>
-          <p className="text-xs text-slate-600">Pode ter ocorrido uma falha temporária ao carregar do servidor.</p>
+      {/* Layout Principal: Filtros à Esquerda + Produtos à Direita */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
-          {onRecarregar && (
-            <button
-              onClick={onRecarregar}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-700 shadow-md"
-            >
-              🔄 Recarregar Catálogo
-            </button>
+        {/* Painel Lateral de Filtros */}
+        <aside className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-6 h-fit">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h2 className="text-sm font-bold text-slate-200">Filtrar por Marca</h2>
+            {marcasSelecionadas.length > 0 && (
+              <button
+                onClick={() => setMarcasSelecionadas([])}
+                className="text-[10px] text-sky-400 hover:underline cursor-pointer"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {marcasDisponiveis.map((marca, index) => {
+              const selecionada = marcasSelecionadas.includes(marca);
+              return (
+                <label
+                  key={index}
+                  className="flex items-center space-x-3 text-xs text-slate-300 cursor-pointer hover:text-slate-100 transition"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selecionada}
+                    onChange={() => handleToggleMarca(marca)}
+                    className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-sky-600 focus:ring-sky-500 focus:ring-offset-slate-900 cursor-pointer"
+                  />
+                  <span>{marca}</span>
+                </label>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* Grelha de Produtos */}
+        <div className="lg:col-span-3">
+          {carregandoProdutos ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-3">
+              <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-xs font-medium animate-pulse">A carregar catálogo de sneakers...</p>
+            </div>
+          ) : produtosFiltrados.length === 0 ? (
+            <div className="text-center py-20 text-slate-500 space-y-4 bg-slate-900/50 border border-slate-800/60 rounded-2xl">
+              <p className="text-3xl">👟</p>
+              <p className="text-sm font-medium">Nenhum produto encontrado.</p>
+              <p className="text-xs text-slate-600">Tente ajustar os filtros de marca ou a pesquisa.</p>
+
+              {onRecarregar && (
+                <button
+                  onClick={onRecarregar}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-700 shadow-md"
+                >
+                  🔄 Recarregar Catálogo
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {produtosFiltrados.map(produto => {
+                const listaTamanhos = obterTamanhos(produto);
+                return (
+                  <div key={produto.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-4 hover:border-slate-700 transition shadow-lg">
+                    <div>
+                      {produto.imagem || produto.foto ? (
+                        <img
+                          src={produto.imagem || produto.foto}
+                          alt={produto.nome}
+                          className="w-full h-48 object-cover rounded-xl mb-3 bg-slate-950"
+                        />
+                      ) : (
+                        <div className="w-full h-48 bg-slate-950 rounded-xl mb-3 flex items-center justify-center text-slate-600 text-xs">
+                          Sem imagem
+                        </div>
+                      )}
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-sky-400 bg-sky-950/50 px-2 py-0.5 rounded-md border border-sky-900/50">
+                        {produto.marca || 'Sneaker'}
+                      </span>
+                      <h3 className="font-bold text-slate-100 text-sm mt-1 line-clamp-1">{produto.nome}</h3>
+                      <p className="text-slate-400 text-xs mt-1 font-semibold">
+                        R$ {Number(produto.preco).toFixed(2)}
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {Array.isArray(listaTamanhos) && listaTamanhos.length > 0 ? (
+                          listaTamanhos.map((t, idx) => {
+                            const qtd = Number(t.quantidade ?? t.qtd ?? 0);
+                            return (
+                              <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${qtd > 0 ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-950 border-slate-900 text-slate-600 line-through'}`}>
+                                {t.tamanho}
+                              </span>
+                            );
+                          })
+                        ) : produto.tamanhoDisponivel ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 border-slate-700 text-slate-300">
+                            {produto.tamanhoDisponivel}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-3 border-t border-slate-800">
+                      <button
+                        onClick={() => abrirModalTamanhos(produto)}
+                        className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl text-xs transition cursor-pointer shadow-md flex items-center justify-center space-x-1.5"
+                      >
+                        <span>🛒 Selecionar Tamanho</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {produtosFiltrados.map(produto => {
-            const listaTamanhos = obterTamanhos(produto);
-            return (
-              <div key={produto.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-4 hover:border-slate-700 transition shadow-lg">
-                <div>
-                  {produto.imagem || produto.foto ? (
-                    <img
-                      src={produto.imagem || produto.foto}
-                      alt={produto.nome}
-                      className="w-full h-48 object-cover rounded-xl mb-3 bg-slate-950"
-                    />
-                  ) : (
-                    <div className="w-full h-48 bg-slate-950 rounded-xl mb-3 flex items-center justify-center text-slate-600 text-xs">
-                      Sem imagem
-                    </div>
-                  )}
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-sky-400 bg-sky-950/50 px-2 py-0.5 rounded-md border border-sky-900/50">
-                    {produto.marca || 'Sneaker'}
-                  </span>
-                  <h3 className="font-bold text-slate-100 text-sm mt-1 line-clamp-1">{produto.nome}</h3>
-                  <p className="text-slate-400 text-xs mt-1 font-semibold">
-                    R$ {Number(produto.preco).toFixed(2)}
-                  </p>
-
-                  {/* Mostrar prévia dos tamanhos disponíveis no card */}
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {Array.isArray(listaTamanhos) && listaTamanhos.length > 0 ? (
-                      listaTamanhos.map((t, idx) => {
-                        const qtd = Number(t.quantidade ?? t.qtd ?? 0);
-                        return (
-                          <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${qtd > 0 ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-950 border-slate-900 text-slate-600 line-through'}`}>
-                            {t.tamanho}
-                          </span>
-                        );
-                      })
-                    ) : produto.tamanhoDisponivel ? (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 border-slate-700 text-slate-300">
-                        {produto.tamanhoDisponivel}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-3 border-t border-slate-800">
-                  <button
-                    onClick={() => abrirModalTamanhos(produto)}
-                    className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl text-xs transition cursor-pointer shadow-md flex items-center justify-center space-x-1.5"
-                  >
-                    <span>🛒 Selecionar Tamanho</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      </div>
 
       {/* MODAL DE SELEÇÃO DE TAMANHO */}
       {produtoModal && (
